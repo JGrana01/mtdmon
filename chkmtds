@@ -1,0 +1,234 @@
+#!/bin/sh
+
+MTDLOG="/jffs/addons/mtdmon.d/mtdlog"
+NEWBADLIST="/jffs/addons/mtdmon.d/newbblist"
+MTDCHECKBINARY="https://raw.githubusercontent.com/JGrana01/mtd_check/master"
+MTDMONSCRIPT="https://raw.githubusercontent.com/JGrana01/mtdmon/master"
+
+InstallMtdMon(){
+
+# make sure router is running Entware and has an /opt/bin directory
+	
+	echo
+	echo
+	echo "mtdmon Installer"
+	echo
+	echo "This will install mtdmon addon and the mtd_check application"
+	echo -n "To continue, enter Y "
+	read a
+
+	if ! [ $a == "Y" -o $a == "y" ]; then
+		echo "ok - exiting"
+		exit
+	fi
+	echo
+	echo -n "Checking for Entware"
+	if ! [ -f /opt/bin/opkg ]; then
+		echo "Entware not installed"
+		echo "Can't install mtdmon. It requires Entware"
+		echo "You can install Entware using the builtin firmware command amtm"
+		exit
+	fi
+	echo " ok"
+	echo
+
+# Check if an armv7l or aarch64 class router
+
+	echo -n "Checking for the application mtd_check"
+	
+	if ! [ -x /opt/bin/mtd_check ]; then
+		echo "Installing mtd_check"
+		echo "Checking for armv7l or aarch64 class kernel"
+		machtype=$(/bin/uname -m)
+		echo "Reported: " $machtype
+		echo
+
+		if [ $machtype == "armv7l" ]; then
+			echo -n "Installing mtd_check for 32bit armv7l router"
+#			/usr/sbin/curl --retry 3 "https://raw.githubusercontent.com/JGrana01/mtd_check/master/mtd_check7l" -o "/opt/bin/mtd_check" && chmod 0755 /opt/bin/mtd_check
+			/usr/sbin/curl --retry 3 "$MTDCHECKBINARY/mtd_check7l" -o "/opt/bin/mtd_check" && chmod 0755 /opt/bin/mtd_check
+			elif [ $machtype == "aarch64" ]; then
+				echo -n "Installing mtd_check for 64bit aarch64 router"
+				/usr/sbin/curl --retry 3 "$MTDCHECKBINARY/mtd_check64" -o "/opt/bin/mtd_check" && chmod 0755 /opt/bin/mtd_check
+			else
+				echo "Sorry, mtdmon requires mtd_check which only on runs on armv7l or aarch64 class routers" 
+			exit
+		fi
+	else
+	echo " ok"
+	
+fi
+
+# ok, Entware good, mtd_check installed, install the addon
+	echo "Installing mtdmon addon"
+	/usr/sbin/curl --retry 3 "$MTDMONSCRIPT/mtdmon" -o "/opt/bin/mtdmon" && chmod 0755 /opt/bin/mtdmon
+	
+
+
+
+}
+
+CreateMTDLog(){
+rm -f $MTDLOG
+rm -f $NEWBADLIST
+
+for i in `cat /proc/mtd | grep -v 'ubi\|dev' | cut -d ':' -f 1`
+do
+	echo -n "$i   " >> $MTDLOG
+	echo -n "`/opt/bin/mtd_check -z /dev/$i` " >> $MTDLOG
+	echo  "  `date +"%m-%d-%Y-%h-%m" `" >> $MTDLOG
+done
+}
+
+ScanBadBlocks(){
+
+	rm -f $NEWBADLIST
+
+        while IFS=  read -r line
+        do
+                mtdevice="$(echo $line | cut -d' ' -f1)"
+                numbbs="$(echo $line | cut -d' ' -f2)"
+                bbsdate="$(echo $line | cut -d' ' -f3)"
+		latestbb="$(/opt/bin/mtd_check -b /dev/$mtdevice)"
+# debug stuff
+		if [ "$mtdevice" == "mtd3" ]; then
+			latestbb=1
+		fi
+		if [ "$latestbb" -gt "$numbbs" ]; then
+			echo "New Bad Block(s) detected on /dev/$mtdevice"
+			newdate="`date +"%m-%d-%Y-$h-$m" `"
+			echo "$mtdevice   $numbbs   $latestbb   $bbsdate   $newdate" >> $NEWBADLIST
+		else
+			echo -n "Good "
+		fi
+        done < $MTDLOG
+}
+
+ReportNewBB(){
+
+if [ -f $NEWBADLIST ]; then
+	
+	mailtemp=`mktemp`
+
+	echo "New Bad Block(s) Detected on mtd Device" > $mailtemp
+	echo >> $mailtemp
+	echo "mtd    #   #    Previous      Latest" >> $mailtemp
+	echo "dev   old new     date         date" >> $mailtemp
+	echo "--------------------------------------" >> $mailtemp
+	cat $NEWBADLIST >> $mailtemp
+
+	echo "Mail temp is: " $mailtemp
+fi
+}
+
+UpdateBBlog(){
+if [ -f $NEWBADLIST ]; then
+       while IFS=  read -r line
+        do
+                mtdevice="$(echo $line | cut -d' ' -f1)"
+                oldbbs="$(echo $line | cut -d' ' -f2)"
+                newbbs="$(echo $line | cut -d' ' -f3)"
+                oldate="$(echo $line | cut -d' ' -f4)"
+		sed -i "s/$mtdevice $oldbbs $oldate/$mtdevice $newbbs/" $MTDLOG
+        done < $NEWBADLIST
+#	rm $NEWBADLIST
+fi
+}
+
+
+case "$1" in
+	scan)
+		ScanBadBlocks
+		if [ -f $NEWBADLIST ]; then
+			echo "Some new bad blocks detected"
+			echo
+			cat $NEWBADLIST
+		else
+			echo "No new bad bkocks found - Good!"
+		fi
+	;;
+
+	show)
+	;;
+
+	disable)
+		Check_Lock "$@"
+		Unload_Cron
+		echo "[%] ChannelHog Disabled"
+	;;
+
+	update)
+		Check_Lock "$@"
+		remotedir="https://raw.githubusercontent.com/Adamm00/ChannelHog/master"
+		localver="$(Filter_Version < "$0")"
+		remotever="$(curl -fsL --retry 3 --connect-timeout 3 "${remotedir}/channelhog.sh" | Filter_Version)"
+		localmd5="$(md5sum "$0" | awk '{print $1}')"
+		remotemd5="$(curl -fsL --retry 3 --connect-timeout 3 "${remotedir}/channelhog.sh" | md5sum | awk '{print $1}')"
+		if [ "$localmd5" = "$remotemd5" ] && [ "$2" != "-f" ]; then
+			echo "[i] ChannelHog Up To Date - $localver (${localmd5})"
+			noupdate="1"
+		elif [ "$localmd5" != "$remotemd5" ] && [ "$2" = "check" ]; then
+			echo "[i] ChannelHog Update Detected - $remotever (${remotemd5})"
+			noupdate="1"
+		elif [ "$2" = "-f" ]; then
+			echo "[i] Forcing Update"
+		fi
+		if [ "$localmd5" != "$remotemd5" ] || [ "$2" = "-f" ] && [ "$noupdate" != "1" ]; then
+			echo "[i] New Version Detected - Updating To $remotever (${remotemd5})"
+			curl -fsL --retry 3 --connect-timeout 3 "${remotedir}/channelhog.sh" -o "$0"
+			echo "[i] Update Complete!"
+			echo
+			exit 0
+		fi
+	;;
+
+	install)
+	;;
+
+	uninstall)
+		Check_Lock "$@"
+		echo "If You Were Experiencing Issues, Try Update Or Visit SNBForums/Github For Support"
+		echo "https://github.com/Adamm00/ChannelHog"
+		echo
+		while true; do
+			echo "[!] Warning - This Will Remove mtdmon and mtd_check And Related Files"
+			echo "Are You Sure You Want To Uninstall?"
+			echo
+			echo "[1]  --> Yes"
+			echo "[2]  --> No"
+			echo
+			echo "Please Select Option"
+			printf "[1-2]: "
+			read -r "continue"
+			echo
+			case "$continue" in
+				1)
+					echo "[i] Deleting mtdmon Files"
+					sed -i '\~# ChannelHog~d' /jffs/scripts/init-start /jffs/configs/profile.add
+					rm -rf "/jffs/addons/mtdmon" "/opt/bin/mtdmon" "/opt/bin/mtd_check"
+					echo "[i] Complete!"
+					echo
+					exit 0
+				;;
+				2|e|exit)
+					echo "[*] Exiting!"
+					echo; exit 0
+				;;
+				*)
+					echo "[*] $continue Isn't An Option!"
+					echo
+				;;
+			esac
+		done
+	;;
+
+	*)
+		echo "Command Not Recognized, Please Try Again"
+		echo "Accepted Commands Are; (sh $0 [scan|update|install|show|uninstall])"
+		echo; exit 2
+	;;
+esac
+CreateMTDLog
+ScanBadBlocks
+UpdateBBlog
+ReportNewBB
