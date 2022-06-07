@@ -23,6 +23,7 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2154
 # shellcheck disable=SC2155
+
 # shellcheck disable=SC2181
 #################################################
 
@@ -41,7 +42,11 @@ readonly SCRIPT_WEB_DIR="$SCRIPT_WEBPAGE_DIR/$SCRIPT_NAME"
 readonly SHARED_DIR="/jffs/addons/shared-jy"
 
 # the above are not used - saved for potential future usage
+
 readonly MTDAPP_DIR="/opt/bin"
+
+MTDEVPART="$SCRIPT_DIR/mtddevs"
+MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
 
 readonly SHARED_REPO="https://raw.githubusercontent.com/jackyaz/shared-jy/master"
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
@@ -92,7 +97,7 @@ Check_Lock(){
 				exit 1
 			else
 				if [ "$1" = "webui" ]; then
-					echo 'var mtdmon = "LOCKED";' > /tmp/detect_vnstat.js
+					echo 'var mtdmon = "LOCKED";' > /tmp/detect_mtdmon.js
 					exit 1
 				fi
 				return 1
@@ -193,7 +198,8 @@ Update_Version(){
 			case "$confirm" in
 				y|Y)
 					printf "\\n"
-					Update_File mtdmon.conf
+#					Update_File mtdmon.conf
+					Update_File mtd_check
 					/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" -o "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated"
 					chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
 					Set_Version_Custom_Settings local "$serverver"
@@ -218,7 +224,8 @@ Update_Version(){
 	if [ "$1" = "force" ]; then
 		serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
 		Print_Output true "Downloading latest version ($serverver) of $SCRIPT_NAME" "$PASS"
-		Update_File mtdmon.conf
+#		Update_File mtdmon.conf
+#		Update_File mtd_check
 		/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" -o "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated"
 		chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
 		Set_Version_Custom_Settings local "$serverver"
@@ -242,12 +249,15 @@ Validate_Number(){
 	fi
 }
 
-Validate_Bandwidth(){
-	if echo "$1" | /bin/grep -oq "^[0-9]*\.\?[0-9]\?[0-9]$"; then
-		return 0
-	else
-		return 1
-	fi
+Validate_MtdDev(){
+        if echo "$1" | /bin/grep -oq '/dev/mtd[0-9]'  ; then
+                return 0
+
+        elif echo "$1" | /bin/grep -oq '/dev/mtd1[0-9]'  ; then
+                return 0
+        else
+                return 1
+        fi
 }
 
 ### Perform relevant actions for secondary files when being updated ###
@@ -256,117 +266,22 @@ Update_File(){
 		tmpfile="/tmp/$1"
 		Download_File "$MTDAPP_REPO/$1" "$tmpfile"
 		if ! diff -q "$tmpfile" "$MTDAPP_DIR/$1" >/dev/null 2>&1; then
-			if [ -f "$SCRIPT_DIR/$1" ]; then
-				Get_WebUI_Page "$SCRIPT_DIR/$1"
-				sed -i "\\~$MyPage~d" /tmp/menuTree.js
-				rm -f "$SCRIPT_WEBPAGE_DIR/$MyPage" 2>/dev/null
-			fi
+			Download_File "$MTDAPP_REPO/$1" "$MTDAPP_DIR/$1"
+			chmod 0755 "MTDAPP_DIR/$1"
+			Print_Output true "New version of $1 downloaded" "$PASS"
+		fi
+		rm -f "$tmpfile"
+	elif [ "$1" = "mtdmon" ]; then ### mtdmon script
+		tmpfile="/tmp/$1"
+		Download_File "$SCRIPT_REPO/$1" "$tmpfile"
+		if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1; then
 			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1"
+			chmod 0755 "SCRIPT_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
-			Mount_WebUI
-		fi
-		rm -f "$tmpfile"
-	elif [ "$1" = "shared-jy.tar.gz" ]; then ### shared web resources
-		if [ ! -f "$SHARED_DIR/$1.md5" ]; then
-			Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
-			Download_File "$SHARED_REPO/$1.md5" "$SHARED_DIR/$1.md5"
-			tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
-			rm -f "$SHARED_DIR/$1"
-			Print_Output true "New version of $1 downloaded" "$PASS"
-		else
-			localmd5="$(cat "$SHARED_DIR/$1.md5")"
-			remotemd5="$(curl -fsL --retry 3 "$SHARED_REPO/$1.md5")"
-			if [ "$localmd5" != "$remotemd5" ]; then
-				Download_File "$SHARED_REPO/$1" "$SHARED_DIR/$1"
-				Download_File "$SHARED_REPO/$1.md5" "$SHARED_DIR/$1.md5"
-				tar -xzf "$SHARED_DIR/$1" -C "$SHARED_DIR"
-				rm -f "$SHARED_DIR/$1"
-				Print_Output true "New version of $1 downloaded" "$PASS"
-			fi
-		fi
-	elif [ "$1" = "S33vnstat" ]; then ### Entware S script to launch vnstat
-		tmpfile="/tmp/$1"
-		Download_File "$SCRIPT_REPO/$1" "$tmpfile"
-		if ! diff -q "$tmpfile" "/opt/etc/init.d/$1" >/dev/null 2>&1; then
-			if [ -f /opt/etc/init.d/S33vnstat ]; then
-				/opt/etc/init.d/S33vnstat stop >/dev/null 2>&1
-				sleep 2
-			fi
-			Download_File "$SCRIPT_REPO/$1" "/opt/etc/init.d/$1"
-			chmod 0755 "/opt/etc/init.d/$1"
-			/opt/etc/init.d/S33vnstat start >/dev/null 2>&1
-			Print_Output true "New version of $1 downloaded" "$PASS"
-		fi
-		rm -f "$tmpfile"
-	elif [ "$1" = "mtdmon.conf" ]; then ### mtdmon config file
-		tmpfile="/tmp/$1"
-		Download_File "$SCRIPT_REPO/$1" "$tmpfile"
-		if [ ! -f "$SCRIPT_STORAGE_DIR/$1" ]; then
-			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
-			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1"
-			Print_Output true "$SCRIPT_STORAGE_DIR/$1 does not exist, downloading now." "$PASS"
-		elif [ -f "$SCRIPT_STORAGE_DIR/$1.default" ]; then
-			if ! diff -q "$tmpfile" "$SCRIPT_STORAGE_DIR/$1.default" >/dev/null 2>&1; then
-				Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
-				Print_Output true "New default version of $1 downloaded to $SCRIPT_STORAGE_DIR/$1.default, please compare against your $SCRIPT_STORAGE_DIR/$1" "$PASS"
-			fi
-		else
-			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
-			Print_Output true "$SCRIPT_STORAGE_DIR/$1.default does not exist, downloading now. Please compare against your $SCRIPT_STORAGE_DIR/$1" "$PASS"
 		fi
 		rm -f "$tmpfile"
 	else
 		return 1
-	fi
-}
-
-Conf_FromSettings(){
-	SETTINGSFILE="/jffs/addons/custom_settings.txt"
-	TMPFILE="/tmp/mtdmon_settings.txt"
-	if [ -f "$SETTINGSFILE" ]; then
-		if [ "$(grep "mtdmon_" $SETTINGSFILE | grep -v "version" -c)" -gt 0 ]; then
-			Print_Output true "Updated settings from WebUI found, merging..." "$PASS"
-			cp -a "$SCRIPT_CONF" "$SCRIPT_CONF.bak"
-			cp -a "$SCRIPT_STORAGE_DIR/vnstat.conf" "$SCRIPT_STORAGE_DIR/vnstat.conf.bak"
-			grep "mtdmon_" "$SETTINGSFILE" | grep -v "version" > "$TMPFILE"
-			sed -i "s/mtdmon_//g;s/ /=/g" "$TMPFILE"
-			warningresetrequired="false"
-			while IFS='' read -r line || [ -n "$line" ]; do
-				SETTINGNAME="$(echo "$line" | cut -f1 -d'=' | awk '{ print toupper($1) }')"
-				SETTINGVALUE="$(echo "$line" | cut -f2 -d'=')"
-				if [ "$SETTINGNAME" != "MONTHROTATE" ]; then
-					if [ "$SETTINGNAME" = "DATAALLOWANCE" ]; then
-						if [ "$(echo "$SETTINGVALUE $(BandwidthAllowance check)" | awk '{print ($1 != $2)}')" -eq 1 ]; then
-							warningresetrequired="true"
-						fi
-					fi
-					sed -i "s/$SETTINGNAME=.*/$SETTINGNAME=$SETTINGVALUE/" "$SCRIPT_CONF"
-				elif [ "$SETTINGNAME" = "MONTHROTATE" ]; then
-					if [ "$SETTINGVALUE" != "$(AllowanceStartDay check)" ]; then
-						warningresetrequired="true"
-					fi
-					sed -i 's/^MonthRotate .*$/MonthRotate '"$SETTINGVALUE"'/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-				fi
-			done < "$TMPFILE"
-			grep 'mtdmon_version' "$SETTINGSFILE" > "$TMPFILE"
-			sed -i "\\~mtdmon_~d" "$SETTINGSFILE"
-			mv "$SETTINGSFILE" "$SETTINGSFILE.bak"
-			cat "$SETTINGSFILE.bak" "$TMPFILE" > "$SETTINGSFILE"
-			rm -f "$TMPFILE"
-			rm -f "$SETTINGSFILE.bak"
-			
-			TZ=$(cat /etc/TZ)
-			export TZ
-			
-			if [ "$warningresetrequired" = "true" ]; then
-				Reset_Allowance_Warnings force
-			fi
-			Check_Bandwidth_Usage silent
-			
-			Print_Output true "Merge of updated settings from WebUI completed successfully" "$PASS"
-		else
-			Print_Output false "No updated settings from WebUI found, no merge necessary" "$PASS"
-		fi
 	fi
 }
 
@@ -380,10 +295,6 @@ Create_Dirs(){
 		mkdir -p "$SCRIPT_STORAGE_DIR"
 	fi
 	
-	if [ ! -d "$IMAGE_OUTPUT_DIR" ]; then
-		mkdir -p "$IMAGE_OUTPUT_DIR"
-	fi
-	
 	if [ ! -d "$CSV_OUTPUT_DIR" ]; then
 		mkdir -p "$CSV_OUTPUT_DIR"
 	fi
@@ -392,26 +303,17 @@ Create_Dirs(){
 		mkdir -p "$SHARED_DIR"
 	fi
 	
-	if [ ! -d "$SCRIPT_WEBPAGE_DIR" ]; then
-		mkdir -p "$SCRIPT_WEBPAGE_DIR"
-	fi
+#	if [ ! -d "$SCRIPT_WEBPAGE_DIR" ]; then
+#		mkdir -p "$SCRIPT_WEBPAGE_DIR"
+#	fi
 	
-	if [ ! -d "$SCRIPT_WEB_DIR" ]; then
-		mkdir -p "$SCRIPT_WEB_DIR"
-	fi
+#	if [ ! -d "$SCRIPT_WEB_DIR" ]; then
+#		mkdir -p "$SCRIPT_WEB_DIR"
+#	fi
 }
 
 ### Create symbolic links to /www/user for WebUI files to avoid file duplication ###
 Create_Symlinks(){
-	rm -rf "${SCRIPT_WEB_DIR:?}/"* 2>/dev/null
-	
-	ln -s /tmp/detect_vnstat.js "$SCRIPT_WEB_DIR/detect_vnstat.js" 2>/dev/null
-	ln -s "$SCRIPT_STORAGE_DIR/.vnstatusage" "$SCRIPT_WEB_DIR/vnstatusage.js" 2>/dev/null
-	ln -s "$VNSTAT_OUTPUT_FILE" "$SCRIPT_WEB_DIR/vnstatoutput.htm" 2>/dev/null
-	ln -s "$SCRIPT_CONF" "$SCRIPT_WEB_DIR/config.htm" 2>/dev/null
-	ln -s "$SCRIPT_STORAGE_DIR/vnstat.conf" "$SCRIPT_WEB_DIR/vnstatconf.htm" 2>/dev/null
-	ln -s "$IMAGE_OUTPUT_DIR" "$SCRIPT_WEB_DIR/images" 2>/dev/null
-	ln -s "$CSV_OUTPUT_DIR" "$SCRIPT_WEB_DIR/csv" 2>/dev/null
 	
 	if [ ! -d "$SHARED_WEB_DIR" ]; then
 		ln -s "$SHARED_DIR" "$SHARED_WEB_DIR" 2>/dev/null
@@ -419,61 +321,22 @@ Create_Symlinks(){
 }
 
 Conf_Exists(){
-	if [ -f "$SCRIPT_STORAGE_DIR/vnstat.conf" ]; then
-		restartvnstat="false"
-		if ! grep -q "^MaxBandwidth 1000" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^MaxBandwidth.*$/MaxBandwidth 1000/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
+	if [ -f "$SCRIPT_STORAGE_DIR/mtdmon.conf" ]; then
+		if [ -f "$SCRIPT_CONF" ]; then
+			dos2unix "$SCRIPT_CONF"
+			chmod 0644 "$SCRIPT_CONF"
+			sed -i -e 's/"//g' "$SCRIPT_CONF"
+			if ! grep -q "STORAGELOCATION" "$SCRIPT_CONF"; then
+				echo "STORAGELOCATION=jffs" >> "$SCRIPT_CONF"
+			fi
+			if ! grep -q "OUTPUTTIMEMODE" "$SCRIPT_CONF"; then
+				echo "OUTPUTTIMEMODE=unix" >> "$SCRIPT_CONF"
+			fi
+			return 0
+		else
+			{ echo "DAILYEMAIL=none";  echo "DATAALLOWANCE=1200.00"; echo "USAGEEMAIL=false"; echo "ALLOWANCEUNIT=G"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
+			return 1
 		fi
-		if ! grep -q "^TimeSyncWait 10" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^TimeSyncWait.*$/TimeSyncWait 10/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		if ! grep -q "^UpdateInterval 30" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^UpdateInterval.*$/UpdateInterval 30/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		if ! grep -q "^UnitMode 2" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^UnitMode.*$/UnitMode 2/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		if ! grep -q "^RateUnitMode 1" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^RateUnitMode.*$/RateUnitMode 1/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		if ! grep -q "^OutputStyle 0" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^OutputStyle.*$/OutputStyle 0/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		if ! grep -q '^MonthFormat "%Y-%m"' "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-			sed -i 's/^MonthFormat.*$/MonthFormat "%Y-%m"/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			restartvnstat="true"
-		fi
-		
-		if [ "$restartvnstat" = "true" ]; then
-			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
-			Generate_Images silent
-			Generate_Stats silent
-			Check_Bandwidth_Usage silent
-		fi
-	else
-		Update_File vnstat.conf
-	fi
-	
-	if [ -f "$SCRIPT_CONF" ]; then
-		dos2unix "$SCRIPT_CONF"
-		chmod 0644 "$SCRIPT_CONF"
-		sed -i -e 's/"//g' "$SCRIPT_CONF"
-		if ! grep -q "STORAGELOCATION" "$SCRIPT_CONF"; then
-			echo "STORAGELOCATION=jffs" >> "$SCRIPT_CONF"
-		fi
-		if ! grep -q "OUTPUTTIMEMODE" "$SCRIPT_CONF"; then
-			echo "OUTPUTTIMEMODE=unix" >> "$SCRIPT_CONF"
-		fi
-		return 0
-	else
-		{ echo "DAILYEMAIL=none";  echo "DATAALLOWANCE=1200.00"; echo "USAGEEMAIL=false"; echo "ALLOWANCEUNIT=G"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
-		return 1
 	fi
 }
 
@@ -739,16 +602,8 @@ Check_Requirements(){
 	fi
 
 	if [ "$CHECKSFAILED" = "false" ]; then
-		Print_Output false "Installing required packages from Entware" "$PASS"
-		opkg update
-		opkg install vnstat2
-		opkg install vnstati2
-		opkg install libjpeg-turbo >/dev/null 2>&1
-		opkg install jq
-		opkg install sqlite3-cli
-		opkg install p7zip
-		opkg install findutils
-		rm -f /opt/etc/vnstat.conf
+#		Print_Output false "Installing required packages from Entware" "$PASS"
+#		opkg update
 		return 0
 	else
 		return 1
@@ -771,17 +626,10 @@ ScriptStorageLocation(){
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
 			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/images" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/config" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/config.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/vnstat.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/vnstat.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/vnstat.conf.default" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/.vnstatusage" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/vnstat.txt" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/.v2upgraded" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/v1" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
+			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
+			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/config"
 			ScriptStorageLocation load
 		;;
@@ -789,17 +637,10 @@ ScriptStorageLocation(){
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
 			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/images" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/config" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/config.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/vnstat.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/vnstat.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/vnstat.conf.default" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/.vnstatusage" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/vnstat.txt" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/.v2upgraded" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/v1" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
+			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
+			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/config"
 			ScriptStorageLocation load
 		;;
@@ -816,10 +657,7 @@ ScriptStorageLocation(){
 			fi
 			
 			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
-			IMAGE_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/images"
-			VNSTAT_COMMAND="vnstat --config $SCRIPT_STORAGE_DIR/vnstat.conf"
-			VNSTATI_COMMAND="vnstati --config $SCRIPT_STORAGE_DIR/vnstat.conf"
-			VNSTAT_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/vnstat.txt"
+			MTDMON_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/mtdmon.txt"
 		;;
 	esac
 }
@@ -842,192 +680,7 @@ OutputTimeMode(){
 }
 
 Generate_CSVs(){
-	renice 15 $$
-	interface="$(grep "^Interface" "$SCRIPT_STORAGE_DIR/vnstat.conf" | awk '{print $2}' | sed 's/"//g')"
-	dbdir="$(grep "^DatabaseDir " "$SCRIPT_STORAGE_DIR/vnstat.conf" | awk '{print $2}' | sed 's/"//g')"
-	TZ=$(cat /etc/TZ)
-	export TZ
-	
-	timenow=$(date +"%s")
-	
-	{
-		echo ".headers off"
-		echo ".output /tmp/dn-vnstatiface"
-		echo "SELECT id FROM [interface] WHERE [name] = '$interface';"
-	} > /tmp/dn-vnstat.sql
-	"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-	interfaceid="$(cat /tmp/dn-vnstatiface)"
-	rm -f /tmp/dn-vnstatiface
-	
-	intervallist="fiveminute hour day"
-	
-	for interval in $intervallist; do
-		metriclist="rx tx"
-		
-		for metric in $metriclist; do
-			{
-				echo ".mode csv"
-				echo ".headers off"
-				echo ".output $CSV_OUTPUT_DIR/${metric}daily.tmp"
-				echo "SELECT '$metric' Metric,strftime('%s',[date],'utc') Time,[$metric] Value FROM $interval WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','-1 day'));"
-			} > /tmp/dn-vnstat.sql
-			"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-			
-			{
-				echo ".mode csv"
-				echo ".headers off"
-				echo ".output $CSV_OUTPUT_DIR/${metric}weekly.tmp"
-				echo "SELECT '$metric' Metric,strftime('%s',[date],'utc') Time,[$metric] Value FROM $interval WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','-7 day'));"
-			} > /tmp/dn-vnstat.sql
-			"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-			
-			{
-				echo ".mode csv"
-				echo ".headers off"
-				echo ".output $CSV_OUTPUT_DIR/${metric}monthly.tmp"
-				echo "SELECT '$metric' Metric,strftime('%s',[date],'utc') Time,[$metric] Value FROM $interval WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','-30 day'));"
-			} > /tmp/dn-vnstat.sql
-			"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-			
-			rm -f /tmp/dn-vnstat.sql
-		done
-		
-		cat "$CSV_OUTPUT_DIR/rxdaily.tmp" "$CSV_OUTPUT_DIR/txdaily.tmp" > "$CSV_OUTPUT_DIR/DataUsage_${interval}_daily.htm" 2> /dev/null
-		cat "$CSV_OUTPUT_DIR/rxweekly.tmp" "$CSV_OUTPUT_DIR/txweekly.tmp" > "$CSV_OUTPUT_DIR/DataUsage_${interval}_weekly.htm" 2> /dev/null
-		cat "$CSV_OUTPUT_DIR/rxmonthly.tmp" "$CSV_OUTPUT_DIR/txmonthly.tmp" > "$CSV_OUTPUT_DIR/DataUsage_${interval}_monthly.htm" 2> /dev/null
-		
-		sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/DataUsage_${interval}_daily.htm"
-		sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/DataUsage_${interval}_weekly.htm"
-		sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/DataUsage_${interval}_monthly.htm"
-		
-		rm -f "$CSV_OUTPUT_DIR/rx"*
-		rm -f "$CSV_OUTPUT_DIR/tx"*
-	done
-	
-	metriclist="rx tx"
-	
-	for metric in $metriclist; do
-		{
-			echo ".mode csv"
-			echo ".headers off"
-			echo ".output $CSV_OUTPUT_DIR/week_this_${metric}.tmp"
-			echo "SELECT '$metric' Metric,strftime('%w', [date]) Time,[$metric] Value FROM day WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-7 day'));"
-		} > /tmp/dn-vnstat.sql
-		"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-		{
-			echo ".mode csv"
-			echo ".headers off"
-			echo ".output $CSV_OUTPUT_DIR/week_prev_${metric}.tmp"
-			echo "SELECT '$metric' Metric,strftime('%w', [date]) Time,[$metric] Value FROM day WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') < strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-7 day')) AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-14 day'));"
-		} > /tmp/dn-vnstat.sql
-		"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-		
-		{
-			echo ".mode csv"
-			echo ".headers off"
-			echo ".output $CSV_OUTPUT_DIR/week_summary_this_${metric}.tmp"
-			echo "SELECT '$metric' Metric,'Current 7 days' Time,IFNULL(SUM([$metric]),'0') Value FROM day WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-7 day'));"
-		} > /tmp/dn-vnstat.sql
-		"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-		{
-			echo ".mode csv"
-			echo ".headers off"
-			echo ".output $CSV_OUTPUT_DIR/week_summary_prev_${metric}.tmp"
-			echo "SELECT '$metric' Metric,'Previous 7 days' Time,IFNULL(SUM([$metric]),'0') Value FROM day WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') < strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-7 day')) AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-14 day'));"
-		} > /tmp/dn-vnstat.sql
-		"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-		{
-			echo ".mode csv"
-			echo ".headers off"
-			echo ".output $CSV_OUTPUT_DIR/week_summary_prev2_${metric}.tmp"
-			echo "SELECT '$metric' Metric,'2 weeks ago' Time,IFNULL(SUM([$metric]),'0') Value FROM day WHERE [interface] = '$interfaceid' AND strftime('%s',[date],'utc') < strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-14 day')) AND strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','start of day','+1 day','-21 day'));"
-		} > /tmp/dn-vnstat.sql
-		"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat.sql
-	done
-	
-	cat "$CSV_OUTPUT_DIR/week_this_rx.tmp" "$CSV_OUTPUT_DIR/week_this_tx.tmp" > "$CSV_OUTPUT_DIR/WeekThis.htm" 2> /dev/null
-	cat "$CSV_OUTPUT_DIR/week_prev_rx.tmp" "$CSV_OUTPUT_DIR/week_prev_tx.tmp" > "$CSV_OUTPUT_DIR/WeekPrev.htm" 2> /dev/null
-	
-	sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/WeekThis.htm"
-	sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/WeekPrev.htm"
-	
-	cat "$CSV_OUTPUT_DIR/week_summary_this_rx.tmp" "$CSV_OUTPUT_DIR/week_summary_this_tx.tmp" "$CSV_OUTPUT_DIR/week_summary_prev_rx.tmp" "$CSV_OUTPUT_DIR/week_summary_prev_tx.tmp" "$CSV_OUTPUT_DIR/week_summary_prev2_rx.tmp" "$CSV_OUTPUT_DIR/week_summary_prev2_tx.tmp" > "$CSV_OUTPUT_DIR/WeekSummary.htm" 2> /dev/null
-	sed -i 's/rx/Received/g;s/tx/Sent/g;1i Metric,Time,Value' "$CSV_OUTPUT_DIR/WeekSummary.htm"
-	
-	rm -f "$CSV_OUTPUT_DIR/week"*
-	
-	{
-		echo ".mode csv"
-		echo ".headers on"
-		echo ".output $CSV_OUTPUT_DIR/CompleteResults.htm"
-		echo "SELECT strftime('%s',[date],'utc') Time,[rx],[tx] FROM fiveminute WHERE strftime('%s',[date],'utc') >= strftime('%s',datetime($timenow,'unixepoch','-30 day')) ORDER BY strftime('%s', [date]) DESC;"
-	} > /tmp/dn-vnstat-complete.sql
-	"$SQLITE3_PATH" "$dbdir/vnstat.db" < /tmp/dn-vnstat-complete.sql
-	rm -f /tmp/dn-vnstat-complete.sql
-	
-	dos2unix "$CSV_OUTPUT_DIR/"*.htm
-	
-	tmpoutputdir="/tmp/${SCRIPT_NAME}results"
-	mkdir -p "$tmpoutputdir"
-	mv "$CSV_OUTPUT_DIR/CompleteResults"*.htm "$tmpoutputdir/."
-	
-	OUTPUTTIMEMODE="$(OutputTimeMode check)"
-	
-	if [ "$OUTPUTTIMEMODE" = "unix" ]; then
-		find "$tmpoutputdir/" -name '*.htm' -exec sh -c 'i="$1"; mv -- "$i" "${i%.htm}.csv"' _ {} \;
-	elif [ "$OUTPUTTIMEMODE" = "non-unix" ]; then
-		for i in "$tmpoutputdir/"*".htm"; do
-			awk -F"," 'NR==1 {OFS=","; print} NR>1 {OFS=","; $1=strftime("%Y-%m-%d %H:%M:%S", $1); print }' "$i" > "$i.out"
-		done
-		
-		find "$tmpoutputdir/" -name '*.htm.out' -exec sh -c 'i="$1"; mv -- "$i" "${i%.htm.out}.csv"' _ {} \;
-		rm -f "$tmpoutputdir/"*.htm
-	fi
-	
-	if [ ! -f /opt/bin/7za ]; then
-		opkg update
-		opkg install p7zip
-	fi
-	/opt/bin/7za a -y -bsp0 -bso0 -tzip "/tmp/${SCRIPT_NAME}data.zip" "$tmpoutputdir/*"
-	mv "/tmp/${SCRIPT_NAME}data.zip" "$CSV_OUTPUT_DIR"
-	rm -rf "$tmpoutputdir"
-	renice 0 $$
-}
-
-Generate_Images(){
-	Create_Dirs
-	Conf_Exists
-	ScriptStorageLocation load
-	Create_Symlinks
-	Auto_Startup create 2>/dev/null
-	Auto_Cron create 2>/dev/null
-	Auto_ServiceEvent create 2>/dev/null
-	Shortcut_Script create
-	Process_Upgrade
-	if [ ! -f /opt/lib/libjpeg.so ]; then
-		opkg update >/dev/null 2>&1
-		opkg install libjpeg-turbo >/dev/null 2>&1
-	fi
-	TZ=$(cat /etc/TZ)
-	export TZ
-	
-	[ -z "$1" ] && Print_Output false "vnstati updating stats for UI" "$PASS"
-	
-	interface="$(grep "^Interface" "$SCRIPT_STORAGE_DIR/vnstat.conf" | awk '{print $2}' | sed 's/"//g')"
-	outputs="s hg d t m"   # what images to generate
-	
-	$VNSTATI_COMMAND -s -i "$interface" -o "$IMAGE_OUTPUT_DIR/vnstat_s.png"
-	$VNSTATI_COMMAND -hg -i "$interface" -o "$IMAGE_OUTPUT_DIR/vnstat_hg.png"
-	$VNSTATI_COMMAND -d 31 -i "$interface" -o "$IMAGE_OUTPUT_DIR/vnstat_d.png"
-	$VNSTATI_COMMAND -m 12 -i "$interface" -o "$IMAGE_OUTPUT_DIR/vnstat_m.png"
-	$VNSTATI_COMMAND -t 10 -i "$interface" -o "$IMAGE_OUTPUT_DIR/vnstat_t.png"
-	
-	sleep 1
-	
-	for output in $outputs; do
-		cp "$IMAGE_OUTPUT_DIR/vnstat_$output.png" "$IMAGE_OUTPUT_DIR/.vnstat_$output.htm"
-		rm -f "$IMAGE_OUTPUT_DIR/vnstat_$output.htm"
-	done
+	return 0
 }
 
 Generate_Stats(){
@@ -1048,22 +701,17 @@ Generate_Stats(){
 	Create_Symlinks
 	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
-	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
 	Process_Upgrade
-	interface="$(grep "^Interface" "$SCRIPT_STORAGE_DIR/vnstat.conf" | awk '{print $2}' | sed 's/"//g')"
 	TZ=$(cat /etc/TZ)
 	export TZ
-	printf "vnstats as of: %s\\n\\n" "$(date)" > "$VNSTAT_OUTPUT_FILE"
+	printf "mtdmon stats as of: %s\\n\\n" "$(date)" > "$MTDMON_OUTPUT_FILE"
 	{
-		$VNSTAT_COMMAND -h 25 -i "$interface";
-		$VNSTAT_COMMAND -d 8 -i "$interface";
-		$VNSTAT_COMMAND -m 6 -i "$interface";
-		$VNSTAT_COMMAND -y 5 -i "$interface";
-	} >> "$VNSTAT_OUTPUT_FILE"
-	[ -z "$1" ] && cat "$VNSTAT_OUTPUT_FILE"
+		$MTD_CHECK_COMMAND /dev/mtd0;
+	} >> "$MTDMON_OUTPUT_FILE"
+	[ -z "$1" ] && cat "$MTDMON_OUTPUT_FILE"
 	[ -z "$1" ] && printf "\\n"
-	[ -z "$1" ] && Print_Output false "vnstat_totals summary generated" "$PASS"
+	[ -z "$1" ] && Print_Output false "mtdmon summary generated" "$PASS"
 }
 
 Generate_Email(){
@@ -1096,81 +744,27 @@ Generate_Email(){
 			{
 				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-				echo "Subject: $FRIENDLY_ROUTER_NAME - vnstat-stats as of $(date +"%H.%M on %F")"
+				echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon stats as of $(date +"%H.%M on %F")"
 				echo "Date: $(date -R)"
 				echo ""
-				printf "%s\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.vnstatusage" | cut -f2 -d'"')"
+				printf "%s\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.mtdmonusage" | cut -f2 -d'"')"
 			} > /tmp/mail.txt
-			cat "$VNSTAT_OUTPUT_FILE" >>/tmp/mail.txt
-		elif [ "$(DailyEmail check)" = "html" ]; then
-			# html message to send #
+			cat "$MTDMON_OUTPUT_FILE" >>/tmp/mail.txt
+		fi
+	elif [ "$emailtype" = "error" ]; then
+		Print_Output true "Attempting to send error email"
+		if [ "$(DailyEmail check)" = "text" ];  then
+			# plain text email to send #
 			{
 				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-				echo "Subject: $FRIENDLY_ROUTER_NAME - vnstat-stats as of $(date +"%H.%M on %F")"
+				echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon detected error(s) as of $(date +"%H.%M on %F")"
 				echo "Date: $(date -R)"
-				echo "MIME-Version: 1.0"
-				echo "Content-Type: multipart/mixed; boundary=\"MULTIPART-MIXED-BOUNDARY\""
-				echo "hello there"
 				echo ""
-				echo "--MULTIPART-MIXED-BOUNDARY"
-				echo "Content-Type: multipart/related; boundary=\"MULTIPART-RELATED-BOUNDARY\""
-				echo ""
-				echo "--MULTIPART-RELATED-BOUNDARY"
-				echo "Content-Type: multipart/alternative; boundary=\"MULTIPART-ALTERNATIVE-BOUNDARY\""
+				printf "%s\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.mtdmonusage" | cut -f2 -d'"')"
 			} > /tmp/mail.txt
-			
-			echo "<html><body><p>Welcome to your dn-vnstat stats email!</p>" > /tmp/message.html
-			echo "<p>$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.vnstatusage" | cut -f2 -d'"')</p>" >> /tmp/message.html
-			
-			outputs="s hg d t m"
-			for output in $outputs; do
-				echo "<p><img src=\"cid:vnstat_$output.png\"></p>" >> /tmp/message.html
-			done
-			
-			echo "</body></html>" >> /tmp/message.html
-			
-			message_base64="$(openssl base64 -A < /tmp/message.html)"
-			rm -f /tmp/message.html
-			
-			{
-				echo ""
-				echo "--MULTIPART-ALTERNATIVE-BOUNDARY"
-				echo "Content-Type: text/html; charset=utf-8"
-				echo "Content-Transfer-Encoding: base64"
-				echo ""
-				echo "$message_base64"
-				echo ""
-				echo "--MULTIPART-ALTERNATIVE-BOUNDARY--"
-				echo ""
-			} >> /tmp/mail.txt
-			
-			for output in $outputs; do
-				image_base64="$(openssl base64 -A < "$IMAGE_OUTPUT_DIR/vnstat_$output.png")"
-				Encode_Image "vnstat_$output.png" "$image_base64" /tmp/mail.txt
-			done
-			
-			Encode_Text vnstat.txt "$(cat "$VNSTAT_OUTPUT_FILE")" /tmp/mail.txt
-			
-			{
-				echo "--MULTIPART-RELATED-BOUNDARY--"
-				echo ""
-				echo "--MULTIPART-MIXED-BOUNDARY--"
-			} >> /tmp/mail.txt
+			cat "$MTDMON_OUTPUT_FILE" >>/tmp/mail.txt
 		fi
-	elif [ "$emailtype" = "usage" ]; then
-		[ -z "$5" ] && Print_Output true "Attempting to send bandwidth usage email"
-		usagepercentage="$2"
-		usagestring="$3"
-		# plain text email to send #
-		{
-			echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
-			echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-			echo "Subject: $FRIENDLY_ROUTER_NAME - vnstat data usage $usagepercentage warning - $(date +"%H.%M on %F")"
-			echo "Date: $(date -R)"
-			echo ""
-		} > /tmp/mail.txt
-		printf "%s" "$usagestring" >> /tmp/mail.txt
 	fi
 	
 	#Send Email
@@ -1232,9 +826,9 @@ DailyEmail(){
 			if [ -z "$2" ]; then
 				ScriptHeader
 				exitmenu="false"
-				printf "\\n${BOLD}A choice of emails is available:${CLEARFORMAT}\\n"
-				printf "1.    HTML (includes images from WebUI + summary stats as attachment)\\n"
-				printf "2.    Plain text (summary stats only)\\n"
+				printf "\\n${BOLD}mtdmon can send an email daily or when it detects an error:${CLEARFORMAT}\\n"
+				printf "1.    Only when an error is detected\\n"
+				printf "2.    Daily (and also when an error is detected\\n"
 				printf "\\ne.    Exit to main menu\\n"
 				
 				while true; do
@@ -1242,11 +836,11 @@ DailyEmail(){
 					read -r emailtype
 					case "$emailtype" in
 						1)
-							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=html/' "$SCRIPT_CONF"
+							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=error/' "$SCRIPT_CONF"
 							break
 						;;
 						2)
-							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=text/' "$SCRIPT_CONF"
+							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=daily/' "$SCRIPT_CONF"
 							break
 						;;
 						e)
@@ -1283,150 +877,6 @@ DailyEmail(){
 	esac
 }
 
-UsageEmail(){
-	case "$1" in
-		enable)
-			sed -i 's/^USAGEEMAIL.*$/USAGEEMAIL=true/' "$SCRIPT_CONF"
-			Check_Bandwidth_Usage
-		;;
-		disable)
-			sed -i 's/^USAGEEMAIL.*$/USAGEEMAIL=false/' "$SCRIPT_CONF"
-		;;
-		check)
-			USAGEEMAIL=$(grep "USAGEEMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
-			if [ "$USAGEEMAIL" = "true" ]; then return 0; else return 1; fi
-		;;
-	esac
-}
-
-BandwidthAllowance(){
-	case "$1" in
-		update)
-			bandwidth="$(echo "$2" | awk '{printf("%.2f", $1);}')"
-			sed -i 's/^DATAALLOWANCE.*$/DATAALLOWANCE='"$bandwidth"'/' "$SCRIPT_CONF"
-			if [ -z "$3" ]; then
-				Reset_Allowance_Warnings force
-			fi
-			Check_Bandwidth_Usage
-		;;
-		check)
-			DATAALLOWANCE=$(grep "DATAALLOWANCE" "$SCRIPT_CONF" | cut -f2 -d"=")
-			echo "$DATAALLOWANCE"
-		;;
-	esac
-}
-
-AllowanceStartDay(){
-	case "$1" in
-		update)
-			sed -i 's/^MonthRotate .*$/MonthRotate '"$2"'/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
-			TZ=$(cat /etc/TZ)
-			export TZ
-			Reset_Allowance_Warnings force
-			Check_Bandwidth_Usage
-		;;
-		check)
-			MonthRotate=$(grep "^MonthRotate " "$SCRIPT_STORAGE_DIR/vnstat.conf" | cut -f2 -d" ")
-			echo "$MonthRotate"
-		;;
-	esac
-}
-
-AllowanceUnit(){
-	case "$1" in
-		update)
-		sed -i 's/^ALLOWANCEUNIT.*$/ALLOWANCEUNIT='"$2"'/' "$SCRIPT_CONF"
-		;;
-		check)
-			ALLOWANCEUNIT=$(grep "ALLOWANCEUNIT" "$SCRIPT_CONF" | cut -f2 -d"=")
-			echo "${ALLOWANCEUNIT}B"
-		;;
-	esac
-}
-
-Reset_Allowance_Warnings(){
-	if [ "$(date +%d | awk '{printf("%s", $1+1);}')" -eq "$(AllowanceStartDay check)" ] || [ "$1" = "force" ]; then
-		rm -f "$SCRIPT_STORAGE_DIR/.warning75"
-		rm -f "$SCRIPT_STORAGE_DIR/.warning90"
-		rm -f "$SCRIPT_STORAGE_DIR/.warning100"
-	fi
-}
-
-Check_Bandwidth_Usage(){
-	if [ ! -f /opt/bin/jq ]; then
-		opkg update
-		opkg install jq
-	fi
-	TZ=$(cat /etc/TZ)
-	export TZ
-	
-	interface="$(grep "^Interface" "$SCRIPT_STORAGE_DIR/vnstat.conf" | awk '{print $2}' | sed 's/"//g')"
-	
-	rawbandwidthused="$($VNSTAT_COMMAND -i "$interface" --json m | jq -r '.interfaces[].traffic.month[-1] | .rx + .tx')"
-	userLimit="$(BandwidthAllowance check)"
-	
-	bandwidthused=$(echo "$rawbandwidthused" | awk '{printf("%.2f\n", $1/(1000*1000*1000));}')
-	if AllowanceUnit check | grep -q T; then
-		bandwidthused=$(echo "$rawbandwidthused" | awk '{printf("%.2f\n", $1/(1000*1000*1000*1000));}')
-	fi
-	
-	bandwidthpercentage=""
-	usagestring=""
-	if [ "$(echo "$userLimit 0" | awk '{print ($1 == $2)}')" -eq 1 ]; then
-		bandwidthpercentage="N/A"
-		usagestring="You have used ${bandwidthused}$(AllowanceUnit check) of data this cycle; the next cycle starts on day $(AllowanceStartDay check) of the month."
-	else
-		bandwidthpercentage=$(echo "$bandwidthused $userLimit" | awk '{printf("%.2f\n", $1*100/$2);}')
-		usagestring="You have used ${bandwidthpercentage}% (${bandwidthused}$(AllowanceUnit check)) of your ${userLimit}$(AllowanceUnit check) cycle allowance; the next cycle starts on day $(AllowanceStartDay check) of the month."
-	fi
-	
-	[ -z "$1" ] && Print_Output false "$usagestring"
-	
-	if [ "$bandwidthpercentage" = "N/A" ] || [ "$(echo "$bandwidthpercentage 75" | awk '{print ($1 < $2)}')" -eq 1 ]; then
-		echo "var usagethreshold = false;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-	elif [ "$(echo "$bandwidthpercentage 75" | awk '{print ($1 >= $2)}')" -eq 1 ] && [ "$(echo "$bandwidthpercentage 90" | awk '{print ($1 < $2)}')" -eq 1 ]; then
-		[ -z "$1" ] && Print_Output false "Data use is at or above 75%" "$WARN"
-		echo "var usagethreshold = true;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "Data use is at or above 75%";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		if UsageEmail check && [ ! -f "$SCRIPT_STORAGE_DIR/.warning75" ]; then
-			if [ -n "$1" ]; then
-				Generate_Email usage "75%" "$usagestring" silent
-			else
-				Generate_Email usage "75%" "$usagestring"
-			fi
-			touch "$SCRIPT_STORAGE_DIR/.warning75"
-		fi
-	elif [ "$(echo "$bandwidthpercentage 90" | awk '{print ($1 >= $2)}')" -eq 1 ]  && [ "$(echo "$bandwidthpercentage 100" | awk '{print ($1 < $2)}')" -eq 1 ]; then
-		[ -z "$1" ] && Print_Output false "Data use is at or above 90%" "$ERR"
-		echo "var usagethreshold = true;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "Data use is at or above 90%";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		if UsageEmail check && [ ! -f "$SCRIPT_STORAGE_DIR/.warning90" ]; then
-			if [ -n "$1" ]; then
-				Generate_Email usage "90%" "$usagestring" silent
-			else
-				Generate_Email usage "90%" "$usagestring"
-			fi
-			touch "$SCRIPT_STORAGE_DIR/.warning90"
-		fi
-	elif [ "$(echo "$bandwidthpercentage 100" | awk '{print ($1 >= $2)}')" -eq 1 ]; then
-		[ -z "$1" ] && Print_Output false "Data use is at or above 100%" "$CRIT"
-		echo "var usagethreshold = true;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "Data use is at or above 100%";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		if UsageEmail check && [ ! -f "$SCRIPT_STORAGE_DIR/.warning100" ]; then
-			if [ -n "$1" ]; then
-				Generate_Email usage "100%" "$usagestring" silent
-			else
-				Generate_Email usage "100%" "$usagestring"
-			fi
-			touch "$SCRIPT_STORAGE_DIR/.warning100"
-		fi
-	fi
-	printf "var usagestring = \"%s\";\\n" "$usagestring" >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-	printf "var daterefeshed = \"%s\";\\n" "$(date +"%Y-%m-%d %T")" >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-}
-
 Process_Upgrade(){
 	if [ ! -f "$SCRIPT_STORAGE_DIR/.vnstatusage" ]; then
 		echo "var usagethreshold = false;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
@@ -1452,12 +902,12 @@ ScriptHeader(){
 	printf "\\n"
 	printf "${BOLD}##################################################${CLEARFORMAT}\\n"
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
-	printf "${BOLD}##             vnStat on Merlin                 ##${CLEARFORMAT}\\n"
+	printf "${BOLD}##             mtdmon on Merlin                 ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##        for AsusWRT-Merlin routers            ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##             %s on %-11s            ##${CLEARFORMAT}\\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                              ## ${CLEARFORMAT}\\n"
-	printf "${BOLD}## https://github.com/de-vnull/vnstat-on-merlin ##${CLEARFORMAT}\\n"
+	printf "${BOLD}## https://github.com/JGrana01/mtdmonn          ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##################################################${CLEARFORMAT}\\n"
 	printf "\\n"
@@ -1465,22 +915,13 @@ ScriptHeader(){
 
 MainMenu(){
 	MENU_DAILYEMAIL="$(DailyEmail check)"
-	if [ "$MENU_DAILYEMAIL" = "html" ]; then
-		MENU_DAILYEMAIL="${PASS}ENABLED - HTML"
-	elif [ "$MENU_DAILYEMAIL" = "text" ]; then
-		MENU_DAILYEMAIL="${PASS}ENABLED - TEXT"
+	if [ "$MENU_DAILYEMAIL" = "error" ]; then
+		MENU_DAILYEMAIL="${PASS}ENABLED - ERROR"
+	elif [ "$MENU_DAILYEMAIL" = "daily" ]; then
+		MENU_DAILYEMAIL="${PASS}ENABLED - DAILY"
 	elif [ "$MENU_DAILYEMAIL" = "none" ]; then
 		MENU_DAILYEMAIL="${ERR}DISABLED"
 	fi
-	MENU_USAGE_ENABLED=""
-	if UsageEmail check; then MENU_USAGE_ENABLED="${PASS}ENABLED"; else MENU_USAGE_ENABLED="${ERR}DISABLED"; fi
-	MENU_BANDWIDTHALLOWANCE=""
-	if [ "$(echo "$(BandwidthAllowance check) 0" | awk '{print ($1 == $2)}')" -eq 1 ]; then
-		MENU_BANDWIDTHALLOWANCE="UNLIMITED"
-	else
-		MENU_BANDWIDTHALLOWANCE="$(BandwidthAllowance check)$(AllowanceUnit check)"
-	fi
-	printf "WebUI for %s is available at:\\n${SETTING}%s${CLEARFORMAT}\\n\\n" "$SCRIPT_NAME" "$(Get_WebUI_URL)"
 	printf "1.    Update stats now\\n\\n"
 	printf "2.    Toggle emails for daily summary stats\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
 	printf "3.    Toggle emails for data usage warnings\\n      Currently: ${BOLD}$MENU_USAGE_ENABLED${CLEARFORMAT}\\n\\n"
@@ -1644,7 +1085,7 @@ MainMenu(){
 
 Menu_Install(){
 	ScriptHeader
-	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by dev_null and Jack Yaz"
+	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by JGrana using Jack Yaz addon as template"
 	sleep 1
 	
 	Print_Output false "Checking your router meets the requirements for $SCRIPT_NAME"
@@ -1657,39 +1098,6 @@ Menu_Install(){
 		exit 1
 	fi
 	
-	IFACE=""
-	printf "\\n${BOLD}WAN Interface detected as %s${CLEARFORMAT}\\n" "$(Get_WAN_IFace)"
-	while true; do
-		printf "\\n${BOLD}Is this correct? (y/n)${CLEARFORMAT}  "
-		read -r confirm
-		case "$confirm" in
-			y|Y)
-				IFACE="$(Get_WAN_IFace)"
-				break
-			;;
-			n|N)
-				while true; do
-					printf "\\n${BOLD}Please enter correct interface:${CLEARFORMAT}  "
-					read -r iface
-					iface_lower="$(echo "$iface" | tr "A-Z" "a-z")"
-					if [ "$iface" = "e" ]; then
-						Clear_Lock
-						rm -f "/jffs/scripts/$SCRIPT_NAME" 2>/dev/null
-						exit 1
-					elif [ ! -f "/sys/class/net/$iface_lower/operstate" ] || [ "$(cat "/sys/class/net/$iface_lower/operstate")" = "down" ]; then
-						printf "\\n\\e[31mInput is not a valid interface or interface not up, please try again${CLEARFORMAT}\\n"
-					else
-						IFACE="$iface_lower"
-						break
-					fi
-				done
-			;;
-			*)
-				:
-			;;
-		esac
-	done
-	
 	printf "\\n"
 	
 	Create_Dirs
@@ -1699,35 +1107,14 @@ Menu_Install(){
 	ScriptStorageLocation load
 	Create_Symlinks
 	
-	Update_File vnstat.conf
-	sed -i 's/^Interface .*$/Interface "'"$IFACE"'"/' "$SCRIPT_STORAGE_DIR/vnstat.conf"
-	
-	Update_File vnstat-ui.asp
-	Update_File S33vnstat
-	Update_File shared-jy.tar.gz
+#	Update_File mtdmon
+	Update_File mtd_check
+#	Update_File shared-jy.tar.gz
 	
 	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
-	Auto_ServiceEvent create 2>/dev/null
+#	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
-	
-	if [ ! -f "$SCRIPT_STORAGE_DIR/.vnstatusage" ]; then
-		echo "var usagethreshold = false;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var usagestring = "Not enough data gathered by vnstat";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-	fi
-	
-	if [ -n "$(pidof vnstatd)" ];then
-		Print_Output false "Sleeping for 60s before generating initial stats" "$WARN"
-		sleep 60
-		Generate_Images
-		Generate_Stats
-		Check_Bandwidth_Usage silent
-		Generate_CSVs
-	else
-		Print_Output false "vnstatd not running, please check system log" "$ERR"
-	fi
-	
 	Clear_Lock
 	ScriptHeader
 	MainMenu
@@ -1759,133 +1146,9 @@ Menu_Startup(){
 	Create_Symlinks
 	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
-	Auto_ServiceEvent create 2>/dev/null
+#	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
-	Mount_WebUI
-	Clear_Lock
-}
-
-Menu_BandwidthAllowance(){
-	exitmenu="false"
-	bandwidthallowance=""
-	ScriptHeader
-	
-	while true; do
-		printf "\\n${BOLD}Please enter your monthly bandwidth allowance\\n(%s, 0 = unlimited, max. 2 decimals):${CLEARFORMAT}  " "$(AllowanceUnit check)"
-		read -r allowance
-		
-		if [ "$allowance" = "e" ]; then
-			exitmenu="exit"
-			break
-		elif ! Validate_Bandwidth "$allowance"; then
-			printf "\\n\\e[31mPlease enter a valid number (%s, 0 = unlimited, max. 2 decimals)${CLEARFORMAT}\\n" "$(AllowanceUnit check)"
-		else
-			bandwidthallowance="$allowance"
-			printf "\\n"
-			break
-		fi
-	done
-	
-	if [ "$exitmenu" != "exit" ]; then
-		BandwidthAllowance update "$bandwidthallowance"
-	fi
-	
-	Clear_Lock
-}
-
-Menu_AllowanceUnit(){
-	exitmenu="false"
-	allowanceunit=""
-	prevallowanceunit="$(AllowanceUnit check)"
-	unitsuffix="$(AllowanceUnit check | sed 's/T//;s/G//;')"
-	ScriptHeader
-	
-	while true; do
-		printf "\\n${BOLD}Please select the unit to use for bandwidth allowance:${CLEARFORMAT}\\n"
-		printf "1.    G%s\\n" "$unitsuffix"
-		printf "2.    T%s\\n\\n" "$unitsuffix"
-		printf "Choose an option:  "
-		read -r unitchoice
-		case "$unitchoice" in
-			1)
-				allowanceunit="G"
-				printf "\\n"
-				break
-			;;
-			2)
-				allowanceunit="T"
-				printf "\\n"
-				break
-			;;
-			e)
-				exitmenu="exit"
-				break
-			;;
-			*)
-				printf "\\nPlease choose a valid option\\n\\n"
-			;;
-		esac
-	done
-	if [ "$exitmenu" != "exit" ]; then
-		AllowanceUnit update "$allowanceunit"
-		
-		allowanceunit="$(AllowanceUnit check)"
-		if [ "$prevallowanceunit" != "$allowanceunit" ]; then
-			scalefactor=1000
-			
-			scaletype="none"
-			if [ "$prevallowanceunit" != "$(AllowanceUnit check)" ]; then
-				if echo "$prevallowanceunit" | grep -q G && AllowanceUnit check | grep -q T; then
-					scaletype="divide"
-				elif echo "$prevallowanceunit" | grep -q T && AllowanceUnit check | grep -q G; then
-					scaletype="multiply"
-				fi
-			fi
-		
-			if [ "$scaletype" != "none" ]; then
-				bandwidthallowance="$(BandwidthAllowance check)"
-				if [ "$scaletype" = "multiply" ]; then
-					bandwidthallowance=$(echo "$(BandwidthAllowance check) $scalefactor" | awk '{printf("%.2f\n", $1*$2);}')
-				elif [ "$scaletype" = "divide" ]; then
-					bandwidthallowance=$(echo "$(BandwidthAllowance check) $scalefactor" | awk '{printf("%.2f\n", $1/$2);}')
-				fi
-				BandwidthAllowance update "$bandwidthallowance" noreset
-			fi
-		fi
-	fi
-	
-	Clear_Lock
-}
-
-Menu_AllowanceStartDay(){
-	exitmenu="false"
-	allowancestartday=""
-	ScriptHeader
-	
-	while true; do
-		printf "\\n${BOLD}Please enter day of month that your bandwidth allowance\\nresets (1-28):${CLEARFORMAT}  "
-		read -r startday
-		
-		if [ "$startday" = "e" ]; then
-			exitmenu="exit"
-			break
-		elif ! Validate_Number "$startday"; then
-			printf "\\n\\e[31mPlease enter a valid number (1-28)${CLEARFORMAT}\\n"
-		else
-			if [ "$startday" -lt 1 ] || [ "$startday" -gt 28 ]; then
-				printf "\\n\\e[31mPlease enter a number between 1 and 28${CLEARFORMAT}\\n"
-			else
-				allowancestartday="$startday"
-				printf "\\n"
-				break
-			fi
-		fi
-	done
-	
-	if [ "$exitmenu" != "exit" ]; then
-		AllowanceStartDay update "$allowancestartday"
-	fi
-	
+#	Mount_WebUI
 	Clear_Lock
 }
 
@@ -1921,19 +1184,19 @@ Menu_Edit(){
 	done
 	
 	if [ "$exitmenu" != "true" ]; then
-		CONFFILE="$SCRIPT_STORAGE_DIR/vnstat.conf"
-		oldmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
+		CONFFILE="$SCRIPT_STORAGE_DIR/mtdmon.conf"
+#		oldmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
 		$texteditor "$CONFFILE"
-		newmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
-		if [ "$oldmd5" != "$newmd5" ]; then
-			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
-			TZ=$(cat /etc/TZ)
-			export TZ
-			Check_Bandwidth_Usage silent
-			Clear_Lock
-			printf "\\n"
-			PressEnter
-		fi
+#		newmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
+#		if [ "$oldmd5" != "$newmd5" ]; then
+#			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
+#			TZ=$(cat /etc/TZ)
+#			export TZ
+#			Check_Bandwidth_Usage silent
+#			Clear_Lock
+#			printf "\\n"
+#			PressEnter
+#		fi
 	fi
 	Clear_Lock
 }
@@ -1949,53 +1212,11 @@ Menu_Uninstall(){
 	Auto_Cron delete 2>/dev/null
 	Auto_ServiceEvent delete 2>/dev/null
 	
-	LOCKFILE=/tmp/addonwebui.lock
-	FD=386
-	eval exec "$FD>$LOCKFILE"
-	flock -x "$FD"
-	Get_WebUI_Page "$SCRIPT_DIR/vnstat-ui.asp"
-	if [ -n "$MyPage" ] && [ "$MyPage" != "none" ] && [ -f "/tmp/menuTree.js" ]; then
-		sed -i "\\~$MyPage~d" /tmp/menuTree.js
-		umount /www/require/modules/menuTree.js
-		mount -o bind /tmp/menuTree.js /www/require/modules/menuTree.js
-		rm -f "$SCRIPT_WEBPAGE_DIR/$MyPage"
-		rm -f "$SCRIPT_WEBPAGE_DIR/$(echo $MyPage | cut -f1 -d'.').title"
-	fi
-	flock -u "$FD"
-	rm -f "$SCRIPT_DIR/vnstat-ui.asp"
-	rm -rf "$SCRIPT_WEB_DIR"
-	
 	Shortcut_Script delete
-	/opt/etc/init.d/S33vnstat stop >/dev/null 2>&1
-	touch /opt/etc/vnstat.conf
-	opkg remove --autoremove vnstati2
-	opkg remove --autoremove vnstat2
-	
-	rm -f /opt/etc/init.d/S33vnstat
-	rm -f /opt/etc/vnstat.conf
-	
-	Reset_Allowance_Warnings force
-	rm -f "$SCRIPT_STORAGE_DIR/.vnstatusage"
-	rm -f "$SCRIPT_STORAGE_DIR/.v2upgraded"
-	rm -rf "$IMAGE_OUTPUT_DIR"
-	rm -rf "$CSV_OUTPUT_DIR"
 	
 	SETTINGSFILE="/jffs/addons/custom_settings.txt"
 	sed -i '/dnvnstat_version_local/d' "$SETTINGSFILE"
 	sed -i '/dnvnstat_version_server/d' "$SETTINGSFILE"
-	
-	printf "\\n${BOLD}Would you like to keep the vnstat\\ndata files and configuration? (y/n)${CLEARFORMAT}  "
-	read -r confirm
-	case "$confirm" in
-		y|Y)
-			:
-		;;
-		*)
-			rm -rf "$SCRIPT_STORAGE_DIR"
-			rm -rf /opt/var/lib/vnstat
-			rm -f /opt/etc/vnstat.conf
-		;;
-	esac
 	
 	rm -f "/jffs/scripts/$SCRIPT_NAME"
 	Clear_Lock
@@ -2048,16 +1269,24 @@ Entware_Ready(){
 Show_About(){
 	cat <<EOF
 About
-  $SCRIPT_NAME implements an NTP time server for AsusWRT Merlin
-  with charts for daily, weekly and monthly summaries of performance.
-  A choice between ntpd and chrony is available.
+  $SCRIPT_NAME will monitor for Bad Blocks and ECC (both Correctable and
+  Uncorrectable) errors on the NAND based mtd device on the router.
+  It requires the mtd_check utility and will install it if needed.
+  The mtd devices are non-volitle areas that store the firmware, nvram
+  and other semi-permanant things such as software, settings, etc.
+  Over time, the OS might detect a problem with a block of this NAND.
+  It will typically correct the issue or reallocate this block as a 
+  Bad Block. This is not unusual and is somewhat normal.
+  But, if the number of Bad Blocks increase, it could show a case where
+  the NAND device (the mtd hardware) is going bad.
 License
   $SCRIPT_NAME is free to use under the GNU General Public License
   version 3 (GPL-3.0) https://opensource.org/licenses/GPL-3.0
 Help & Support
-  https://www.snbforums.com/forums/asuswrt-merlin-addons.60/?prefix_id=22
+  https://github.com/JGrana01/$SCRIPT_NAME
 Source code
-  https://github.com/jackyaz/$SCRIPT_NAME
+  https://github.com/JGrana01/$SCRIPT_NAME
+  https://github.com/JGrana01/mtd_check
 EOF
 	printf "\\n"
 }
@@ -2070,12 +1299,11 @@ Available commands:
   $SCRIPT_NAME about              explains functionality
   $SCRIPT_NAME update             checks for updates
   $SCRIPT_NAME forceupdate        updates to latest version (force update)
-  $SCRIPT_NAME startup force      runs startup actions such as mount WebUI tab
   $SCRIPT_NAME install            installs script
   $SCRIPT_NAME uninstall          uninstalls script
-  $SCRIPT_NAME generate           get latest data from vnstat. also runs outputcsv
-  $SCRIPT_NAME summary            get daily summary data from vnstat. runs automatically at end of day. also runs outputcsv
-  $SCRIPT_NAME outputcsv          create CSVs from database, used by WebUI and export
+  $SCRIPT_NAME generate           get latest data from mtdmon and mtd_check. also runs outputcsv
+  $SCRIPT_NAME summary            get daily summary data from mtdmon. runs automatically at end of day. also runs outputcsv
+  $SCRIPT_NAME outputcsv          create CSVs from data
   $SCRIPT_NAME develop            switch to development branch
   $SCRIPT_NAME stable             switch to stable branch
 EOF
@@ -2092,10 +1320,6 @@ else
 fi
 
 CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
-IMAGE_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/images"
-VNSTAT_COMMAND="vnstat --config $SCRIPT_STORAGE_DIR/vnstat.conf"
-VNSTATI_COMMAND="vnstati --config $SCRIPT_STORAGE_DIR/vnstat.conf"
-VNSTAT_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/vnstat.txt"
 
 if [ -z "$1" ]; then
 	NTP_Ready
@@ -2106,7 +1330,6 @@ if [ -z "$1" ]; then
 	Create_Symlinks
 	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
-	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
 	Process_Upgrade
 	ScriptHeader
@@ -2128,9 +1351,6 @@ case "$1" in
 		NTP_Ready
 		Entware_Ready
 		Check_Lock
-		Generate_Images silent
-		Generate_Stats silent
-		Check_Bandwidth_Usage silent
 		Generate_CSVs
 		Clear_Lock
 		exit 0
@@ -2138,44 +1358,12 @@ case "$1" in
 	summary)
 		NTP_Ready
 		Entware_Ready
-		Reset_Allowance_Warnings
-		Generate_Images silent
-		Generate_Stats silent
-		Check_Bandwidth_Usage silent
-		if [ "$(DailyEmail check)" != "none" ]; then
-			Generate_Email daily
-		fi
 		exit 0
 	;;
 	outputcsv)
 		NTP_Ready
 		Entware_Ready
 		Generate_CSVs
-	;;
-	service_event)
-		if [ "$2" = "start" ] && [ "$3" = "$SCRIPT_NAME" ]; then
-			rm -f /tmp/detect_vnstat.js
-			Check_Lock webui
-			sleep 3
-			echo 'var vnstatstatus = "InProgress";' > /tmp/detect_vnstat.js
-			Generate_Images silent
-			Generate_Stats silent
-			Check_Bandwidth_Usage silent
-			Generate_CSVs
-			echo 'var vnstatstatus = "Done";' > /tmp/detect_vnstat.js
-			Clear_Lock
-			exit 0
-		elif [ "$2" = "start" ] && echo "$3" | grep "${SCRIPT_NAME}config"; then
-			Conf_FromSettings
-			exit 0
-		elif [ "$2" = "start" ] && [ "$3" = "${SCRIPT_NAME}checkupdate" ]; then
-			Update_Check
-			exit 0
-		elif [ "$2" = "start" ] && [ "$3" = "${SCRIPT_NAME}doupdate" ]; then
-			Update_Version force unattended
-			exit 0
-		fi
-		exit 0
 	;;
 	update)
 		Update_Version
@@ -2192,12 +1380,8 @@ case "$1" in
 		Create_Symlinks
 		Auto_Startup create 2>/dev/null
 		Auto_Cron create 2>/dev/null
-		Auto_ServiceEvent create 2>/dev/null
 		Shortcut_Script create
 		Process_Upgrade
-		Generate_Images silent
-		Generate_Stats silent
-		Check_Bandwidth_Usage silent
 		Generate_CSVs
 		Clear_Lock
 		exit 0
@@ -2212,19 +1396,20 @@ case "$1" in
 		exit 0
 	;;
 	help)
+		echo "Got to help"
 		ScriptHeader
 		Show_Help
 		exit 0
 	;;
 	develop)
-		SCRIPT_BRANCH="jackyaz-dev"
-		SCRIPT_REPO="https://raw.githubusercontent.com/de-vnull/vnstat-on-merlin/$SCRIPT_BRANCH"
+		SCRIPT_BRANCH="tree/develop"
+		SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
 		Update_Version force
 		exit 0
 	;;
 	stable)
 		SCRIPT_BRANCH="main"
-		SCRIPT_REPO="https://raw.githubusercontent.com/de-vnull/vnstat-on-merlin/$SCRIPT_BRANCH"
+		SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
 		Update_Version force
 		exit 0
 	;;
