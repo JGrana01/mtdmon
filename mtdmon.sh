@@ -1,4 +1,3 @@
-#!/bin/sh
 
 #################################################
 ##                                             ##
@@ -43,14 +42,22 @@ readonly SHARED_DIR="/jffs/addons/shared-jy"
 
 # the above are not used - saved for potential future usage
 
+
+readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
 readonly MTDAPP_DIR="/opt/bin"
 
 MTDEVPART="$SCRIPT_DIR/mtddevs"
+VALIDMTDS="$SCRIPT_DIR/validmtds"
 MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
+MTDLOG="$SCRIPT_DIR/mtdlog"
+MTDREPORT="$SCRIPT_DIR/mtdreport"
+
 
 readonly SHARED_REPO="https://raw.githubusercontent.com/jackyaz/shared-jy/master"
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
 [ -z "$(nvram get odmpid)" ] && ROUTER_MODEL=$(nvram get productid) || ROUTER_MODEL=$(nvram get odmpid)
+ISHND=$(nvram get rc_support | grep -cw "bcmhnd")
+
 ### End of script variables ###
 
 ### Start of output format variables ###
@@ -198,7 +205,7 @@ Update_Version(){
 			case "$confirm" in
 				y|Y)
 					printf "\\n"
-#					Update_File mtdmon.conf
+					Update_File mtdmon.conf
 					Update_File mtd_check
 					/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" -o "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated"
 					chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
@@ -224,7 +231,7 @@ Update_Version(){
 	if [ "$1" = "force" ]; then
 		serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
 		Print_Output true "Downloading latest version ($serverver) of $SCRIPT_NAME" "$PASS"
-#		Update_File mtdmon.conf
+		Update_File mtdmon.conf
 #		Update_File mtd_check
 		/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" -o "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated"
 		chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
@@ -267,7 +274,7 @@ Update_File(){
 		Download_File "$MTDAPP_REPO/$1" "$tmpfile"
 		if ! diff -q "$tmpfile" "$MTDAPP_DIR/$1" >/dev/null 2>&1; then
 			Download_File "$MTDAPP_REPO/$1" "$MTDAPP_DIR/$1"
-			chmod 0755 "MTDAPP_DIR/$1"
+			chmod 0755 "$MTDAPP_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
 		fi
 		rm -f "$tmpfile"
@@ -276,9 +283,26 @@ Update_File(){
 		Download_File "$SCRIPT_REPO/$1" "$tmpfile"
 		if ! diff -q "$tmpfile" "$SCRIPT_DIR/$1" >/dev/null 2>&1; then
 			Download_File "$SCRIPT_REPO/$1" "$SCRIPT_DIR/$1"
-			chmod 0755 "SCRIPT_DIR/$1"
+			chmod 0755 "$SCRIPT_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
 		fi
+		rm -f "$tmpfile"
+	elif [ "$1" = "mtdmon.conf" ]; then ### mtdmon config file
+                tmpfile="/tmp/$1"
+                Download_File "$SCRIPT_REPO/$1" "$tmpfile"
+                if [ ! -f "$SCRIPT_STORAGE_DIR/$1" ]; then
+                        Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
+                        Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1"
+                        Print_Output true "$SCRIPT_STORAGE_DIR/$1 does not exist, downloading now." "$PASS"
+                elif [ -f "$SCRIPT_STORAGE_DIR/$1.default" ]; then
+                        if ! diff -q "$tmpfile" "$SCRIPT_STORAGE_DIR/$1.default" >/dev/null 2>&1; then
+                                Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
+                                Print_Output true "New default version of $1 downloaded to $SCRIPT_STORAGE_DIR/$1.default, please compare against your $SCRIPT_STORAGE_DIR/$1"
+                        fi
+                else
+                        Download_File "$SCRIPT_REPO/$1" "$SCRIPT_STORAGE_DIR/$1.default"
+                        Print_Output true "$SCRIPT_STORAGE_DIR/$1.default does not exist, downloading now. Please compare against your $SCRIPT_STORAGE_DIR/$1" "$PASS"
+                fi
 		rm -f "$tmpfile"
 	else
 		return 1
@@ -314,29 +338,33 @@ Create_Dirs(){
 
 ### Create symbolic links to /www/user for WebUI files to avoid file duplication ###
 Create_Symlinks(){
+	return  ## no web yet
 	
 	if [ ! -d "$SHARED_WEB_DIR" ]; then
 		ln -s "$SHARED_DIR" "$SHARED_WEB_DIR" 2>/dev/null
 	fi
 }
 
+
 Conf_Exists(){
-	if [ -f "$SCRIPT_STORAGE_DIR/mtdmon.conf" ]; then
-		if [ -f "$SCRIPT_CONF" ]; then
-			dos2unix "$SCRIPT_CONF"
-			chmod 0644 "$SCRIPT_CONF"
-			sed -i -e 's/"//g' "$SCRIPT_CONF"
-			if ! grep -q "STORAGELOCATION" "$SCRIPT_CONF"; then
-				echo "STORAGELOCATION=jffs" >> "$SCRIPT_CONF"
-			fi
-			if ! grep -q "OUTPUTTIMEMODE" "$SCRIPT_CONF"; then
-				echo "OUTPUTTIMEMODE=unix" >> "$SCRIPT_CONF"
-			fi
-			return 0
-		else
-			{ echo "DAILYEMAIL=none";  echo "DATAALLOWANCE=1200.00"; echo "USAGEEMAIL=false"; echo "ALLOWANCEUNIT=G"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
-			return 1
+	if [ ! -f "$SCRIPT_STORAGE_DIR/mtdmon.conf" ]; then
+		Update_File mtdmon.conf
+	fi
+	
+	if [ -f "$SCRIPT_CONF" ]; then
+		dos2unix "$SCRIPT_CONF"
+		chmod 0644 "$SCRIPT_CONF"
+		sed -i -e 's/"//g' "$SCRIPT_CONF"
+		if ! grep -q "STORAGELOCATION" "$SCRIPT_CONF"; then
+			echo "STORAGELOCATION=jffs" >> "$SCRIPT_CONF"
 		fi
+		if ! grep -q "OUTPUTTIMEMODE" "$SCRIPT_CONF"; then
+			echo "OUTPUTTIMEMODE=unix" >> "$SCRIPT_CONF"
+		fi
+		return 0
+	else
+		{ echo "DAILYEMAIL=no"; echo "ERROREMAIL=yes";  echo "USAGEEMAIL=false"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
+		return 1
 	fi
 }
 
@@ -411,19 +439,9 @@ Auto_Startup(){
 Auto_Cron(){
 	case $1 in
 		create)
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_images")
-			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_images"
-			fi
-			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_stats")
-			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_stats"
-			fi
-			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_generate")
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_check")
 			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
-				cru a "${SCRIPT_NAME}_generate" "*/5 * * * * /jffs/scripts/$SCRIPT_NAME generate"
+				cru a "${SCRIPT_NAME}_check" "*/5 * * * * /jffs/scripts/$SCRIPT_NAME check"
 			fi
 			
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_summary")
@@ -432,19 +450,9 @@ Auto_Cron(){
 			fi
 		;;
 		delete)
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_images")
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_check")
 			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_images"
-			fi
-			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_stats")
-			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_stats"
-			fi
-			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_generate")
-			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_generate"
+				cru d "${SCRIPT_NAME}_check"
 			fi
 			
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_summary")
@@ -610,16 +618,6 @@ Check_Requirements(){
 	fi
 }
 
-### Determine WAN interface using nvram ###
-Get_WAN_IFace(){
-	if [ "$(nvram get wan0_proto)" = "pppoe" ] || [ "$(nvram get wan0_proto)" = "pptp" ] || [ "$(nvram get wan0_proto)" = "l2tp" ]; then
-		IFACE_WAN="ppp0"
-	else
-		IFACE_WAN="$(nvram get wan0_ifname)"
-	fi
-	echo "$IFACE_WAN"
-}
-
 ScriptStorageLocation(){
 	case "$1" in
 		usb)
@@ -684,34 +682,29 @@ Generate_CSVs(){
 }
 
 Generate_Stats(){
-	if [ ! -f /opt/bin/xargs ]; then
-		Print_Output true "Installing findutils from Entware"
-		opkg update
-		opkg install findutils
-	fi
-	if [ -n "$PPID" ]; then
-		ps | grep -v grep | grep -v $$ | grep -v "$PPID" | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
-	else
-		ps | grep -v grep | grep -v $$ | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
-	fi
-	sleep 3
 	Create_Dirs
 	Conf_Exists
 	ScriptStorageLocation load
-	Create_Symlinks
-	Auto_Startup create 2>/dev/null
+#	Create_Symlinks
+#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
 	Shortcut_Script create
-	Process_Upgrade
 	TZ=$(cat /etc/TZ)
 	export TZ
 	printf "mtdmon stats as of: %s\\n\\n" "$(date)" > "$MTDMON_OUTPUT_FILE"
+	mtdev="/dev/mtd0"
+	printf "Running chk_mtd on $s" $mtdev
+	if [ "$1" = "Verbose" ]; then
+		cflags=""
+	else
+		cflags="-e"
+	fi
 	{
-		$MTD_CHECK_COMMAND /dev/mtd0;
+		$MTD_CHECK_COMMAND $cflags $mtdev;
 	} >> "$MTDMON_OUTPUT_FILE"
-	[ -z "$1" ] && cat "$MTDMON_OUTPUT_FILE"
-	[ -z "$1" ] && printf "\\n"
-	[ -z "$1" ] && Print_Output false "mtdmon summary generated" "$PASS"
+	[ -z "$2" ] && cat "$MTDMON_OUTPUT_FILE"
+	[ -z "$2" ] && printf "\\n"
+	[ -z "$2" ] && Print_Output false "mtdmon summary generated" "$PASS"
 }
 
 Generate_Email(){
@@ -877,25 +870,234 @@ DailyEmail(){
 	esac
 }
 
-Process_Upgrade(){
-	if [ ! -f "$SCRIPT_STORAGE_DIR/.vnstatusage" ]; then
-		echo "var usagethreshold = false;" > "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var thresholdstring = "";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
-		echo 'var usagestring = "Not enough data gathered by vnstat";' >> "$SCRIPT_STORAGE_DIR/.vnstatusage"
+# start of mtdmon functions
+
+
+GetMTDDevs() {
+cat /proc/mtd | grep -v 'ubi\|dev' > /tmp/mtdevs
+rm -f $MTDEVPART
+while IFS=  read -r line
+     do
+        mtdevice="$(echo $line | cut -d':' -f1)"
+        mtpoint="$(echo $line | cut -d' ' -f4)"
+#
+# now, make sure they contain a valid nand that supports Bad Blocks and ECC
+#
+	if `$MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null`
+	then
+		echo "$mtdevice $mtpoint" >> $MTDEVPART
 	fi
-	
-	if ! grep -q "^UseUTC 0" "$SCRIPT_STORAGE_DIR/vnstat.conf"; then
-		sed -i "/^DatabaseSynchronous/a\\\n# Enable or disable using UTC as timezone in the database for all entries.\n# When enabled, all entries added to the database will use UTC regardless of\n# the configured system timezone. When disabled, the configured system timezone\n# will be used. Changing this setting will not result in already existing data to be modified.\n# 1 = enabled, 0 = disabled.\nUseUTC 0" "$SCRIPT_STORAGE_DIR/vnstat.conf"
-		restartvnstat="true"
-	fi
-	
-	if [ "$restartvnstat" = "true" ]; then
-		/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
-		Generate_Images silent
-		Generate_Stats silent
-		Check_Bandwidth_Usage silent
-	fi
+done < /tmp/mtdevs
+
+# clean up quotes
+
+sed -i 's/\"//g' $MTDEVPART
+
+# Find jffs parition and replace its name
+
+jffsp=`awk -v jffsd="/jffs" '$2==jffsd {print $1}' /proc/mounts | sed 's/block//' | cut -d '/' -f 3`
+jffsmt=`cat $MTDEVPART | grep $jffsp | awk '{print $2 }'`
+sed -i "s/$jffsmt/jffs/g" $MTDEVPART
+
 }
+
+DoUserList() {
+
+	Set_Edit
+
+	rm -f $MTDMONLIST
+
+	cp $MTDEVPART $MTDMONLIST
+	$texteditor $MTDMONLIST
+
+}
+
+DoRecommendedMtdDevs() {
+
+	rm -f $MTDMONLIST
+
+	if [ ! -f $MTDEVPART ];
+	then
+		GetMTDDevs
+	fi
+
+	if [ $ISHND == 1 ];
+	then
+		validmtds="rootfs data nvram image bootfs jffs misc1 misc2 misc3"
+	else
+		validmtds="brcmnand asus"
+	fi
+
+	for i in $validmtds
+	do
+		grep -w $i $MTDEVPART | awk  '{ print $1, $2 }' >> $MTDMONLIST
+	done
+}
+
+
+SetMTDList() {
+
+GetMTDDevs
+
+exitmenu="false"
+
+printf "\\nMtdmon can monitor most all mtd devices or a user defined list\\n"
+printf "There are some mtd devices mtdmon can't check (using check_mtd) such as UBI formatted devices.\\n"
+printf "It is recommended to monitor most devices/partitons such as nvram, bootfs, asus and image partitions (devices)\\n"
+printf "\\n${BOLD}    Not all routers have all of these partitions!${CLEARFORMAT}\\n\\n"
+printf "Mtdmon will automatically select the recommended devices when installed or from menu option 1 in the next menu. \\n\\n"
+PressEnter
+printf "The list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
+cat $MTDEVPART
+printf "\\n\\nmtdmon is presently monitoring:\\n"
+cat $MTDMONLIST
+printf "\\n\\nChoose:\\n"
+printf "1.     Do recommended mtd devices\\n"
+printf "2.     Do All mtd devices\\n"
+printf "3.     Manually edit monitor list\\n"
+printf "4.     Show latest monitor list\\n"
+printf "e.     Exit to main menu\\n"
+while true; do
+	printf "\\n${BOLD}Choose an option:${CLEARFORMAT}  "
+	read -r mtdlist
+	case "$mtdlist" in
+		1)
+			DoRecommendedMtdDevs
+			break
+		;;
+		2)
+			GetMTDDevs
+			break
+		;;
+		3)
+			DoUserList
+			break
+		;;
+		4)
+			cat $MTDMONLIST
+			break
+
+		;;
+		e)
+			exitmenu="true"
+			break
+		;;
+		*)
+			printf "\\nPlease choose a valid option\\n\\n"
+		;;
+	esac
+done
+if [ ! $exitmenu = "true" ]; then
+	printf "\\n\\nThe list of mtd devices mtdmon will check:\\n"
+	cat $MTDMONLIST
+fi
+printf "\\n"
+}
+
+CheckMTDList() {
+
+printf "Checking:\\n\\n "
+
+       if [ "$1" = "Verbose" ]; then
+                cflags=""
+        else
+                cflags="-e"
+        fi
+
+	for mtdev in `cat $MTDMONLIST | awk '{ print $1}'`
+		do
+			printf "${BOLD}$mtdev:${CLEARFORMAT}\\n"
+        		$MTD_CHECK_COMMAND $cflags /dev/$mtdev
+		done
+	
+}
+
+CreateMTDLog(){
+	rm -f $MTDLOG
+
+	for i in `cat $MTDMONLIST | awk '{print $1}'`
+	do
+        	echo -n "$i   " >> $MTDLOG
+        	echo -n "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
+        	echo  "  `date +"%m-%d-%Y-%h-%m" `" >> $MTDLOG
+	done
+}
+
+ShowBBReport(){
+
+	repdate=`date +"%m-%d-%Y-$h-$m"`
+	printf "\\nMtdmon Report $repdate\\n"
+	printf "\\n\\nmtd dev\t   # Bad Blocks\t# Corr ECC\t# Uncorrectable ECC\\n"
+	printf "-----------------------------------------------------------------\n"
+        while IFS=  read -r line
+        do
+                mtdevice="$(echo $line | cut -d' ' -f1)"
+                numbbs="$(echo $line | cut -d' ' -f2)"
+                numcorr="$(echo $line | cut -d' ' -f3)"
+                numuncorr="$(echo $line | cut -d' ' -f4)"
+		printf " $mtdevice\t\t$numbbs\t\t  $numcorr\t$numuncorr\\n" 
+        done < $MTDLOG
+}
+
+
+
+ScanBadBlocks(){
+
+	cp $MTDLOG $MTDLOG.old
+	
+	founderror=0
+
+
+	newdate="`date +"%m-%d-%Y-%h-%m" `"
+
+	printf "mtdmon report $newdate  " > $MTDREPORT
+
+	CreateMTDLog
+
+
+        while IFS=  read -r line
+        do
+                mtdevice="$(echo $line | cut -d' ' -f1)"
+                numbbs="$(echo $line | cut -d' ' -f2)"
+                numcorr="$(echo $line | cut -d' ' -f3)"
+                numuncorr="$(echo $line | cut -d' ' -f4)"
+                bbsdate="$(echo $line | cut -d' ' -f5)"
+
+                latestinfo="$(/opt/bin/mtd_check -z /dev/$mtdevice)"
+
+		latestbbs=`echo $latestinfo | awk '{print $1}'`
+		latestcorr=`echo $latestinfo | awk '{print $2}'`
+		latestuncorr=`echo $latestinfo | awk '{print $3}'`
+
+
+if [ $debug = 1 ]; then
+		latestcorr=3
+fi
+
+if [ $debug = 1 ];
+then
+		printf "info latest: bb -- $latestbbs  corr $latestcorr uncor $latestuncorr\\n"
+		printf "info prev: bb -- $numbbs  corr $numcorr uncor $numuncorr\\n"
+fi
+                if [ "$latestbbs" -gt "$numbbs" ]; then
+			printf "\\nNew Bad Block(s) detected on $mtdevice. Previous number: $numbbs, new number: $latestbbs" >> $MTDREPORT
+			founderror=1
+		fi
+                if [ "$latestcorr" -gt "$numcorr" ]; then
+			printf "\\nNew Correctable ECC Error(s) detected on $mtdevice. Previous number: $numcorr, new number: $latestcorr" >> $MTDREPORT
+			founderror=1
+		fi
+                if [ "$latestuncorr" -gt "$numuncorr" ]; then
+			printf "\\nNew Uncorrectable ECC Error(s) detected on $mtdevice. Previous number: $numuncorr, new number: $latestuncorr" >> $MTDREPORT
+			founderror=1
+		fi
+        done < $MTDLOG.old
+		if [ $founderror == 0 ]; then
+			printf " Ok\\n" >> $MTDREPORT
+		fi
+		printf "\\n" >> $MTDREPORT
+}
+
 
 ScriptHeader(){
 	clear
@@ -922,15 +1124,13 @@ MainMenu(){
 	elif [ "$MENU_DAILYEMAIL" = "none" ]; then
 		MENU_DAILYEMAIL="${ERR}DISABLED"
 	fi
-	printf "1.    Update stats now\\n\\n"
-	printf "2.    Toggle emails for daily summary stats\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
-	printf "3.    Toggle emails for data usage warnings\\n      Currently: ${BOLD}$MENU_USAGE_ENABLED${CLEARFORMAT}\\n\\n"
-	printf "4.    Set bandwidth allowance for data usage warnings\\n      Currently: ${SETTING}%s${CLEARFORMAT}\\n\\n" "$MENU_BANDWIDTHALLOWANCE"
-	printf "5.    Set unit for bandwidth allowance\\n      Currently: ${SETTING}%s${CLEARFORMAT}\\n\\n" "$(AllowanceUnit check)"
-	printf "6.    Set start day of cycle for bandwidth allowance\\n      Currently: ${SETTING}%s${CLEARFORMAT}\\n\\n" "Day $(AllowanceStartDay check) of month"
-	printf "b.    Check bandwidth usage now\\n      ${SETTING}%s${CLEARFORMAT}\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.vnstatusage" | cut -f2 -d'"')"
-	printf "v.    Edit vnstat config\\n\\n"
-	printf "t.    Toggle time output mode\\n      Currently ${SETTING}%s${CLEARFORMAT} time values will be used for CSV exports\\n\\n" "$(OutputTimeMode check)"
+	printf "1.    Check mtd for Bad Blocks and ECC now\\n\\n"
+	printf "2.    Run Verbose mtd stats now\\n\\n"
+	printf "l.    View/Set list of mtd devies to monitor/check\\n\\n"
+	printf "r.    Show a report of the most recent check\\n\\n"
+	printf "d.    Toggle emails for daily summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
+	printf "e.    Toggle emails for error reporting\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
+	printf "v.    Edit mtdmon config\\n\\n"
 	printf "s.    Toggle storage location for stats and config\\n      Current location is ${SETTING}%s${CLEARFORMAT} \\n\\n" "$(ScriptStorageLocation check)"
 	printf "u.    Check for updates\\n"
 	printf "uf.   Force update %s with latest version\\n\\n" "$SCRIPT_NAME"
@@ -947,9 +1147,7 @@ MainMenu(){
 			1)
 				printf "\\n"
 				if Check_Lock menu; then
-					Generate_Images
-					Generate_Stats
-					Generate_CSVs
+					CheckMTDList Info
 					Clear_Lock
 				fi
 				PressEnter
@@ -957,53 +1155,31 @@ MainMenu(){
 			;;
 			2)
 				printf "\\n"
+				if Check_Lock menu; then
+					CheckMTDList Verbose
+					Clear_Lock
+				fi
+				PressEnter
+				break
+			;;
+			l)
+				printf "\\n"
+				SetMTDList
+				PressEnter
+				break
+			;;
+			r)
+				printf "\\n"
+				ShowBBReport
+				PressEnter
+				break
+			;;
+			d)
+				printf "\\n"
 				if [ "$(DailyEmail check)" != "none" ]; then
 					DailyEmail disable
 				elif [ "$(DailyEmail check)" = "none" ]; then
 					DailyEmail enable
-				fi
-				PressEnter
-				break
-			;;
-			3)
-				printf "\\n"
-				if UsageEmail check; then
-					UsageEmail disable
-				elif ! UsageEmail check; then
-					UsageEmail enable
-				fi
-				PressEnter
-				break
-			;;
-			4)
-				printf "\\n"
-				if Check_Lock menu; then
-					Menu_BandwidthAllowance
-				fi
-				PressEnter
-				break
-			;;
-			5)
-				printf "\\n"
-				if Check_Lock menu; then
-					Menu_AllowanceUnit
-				fi
-				PressEnter
-				break
-			;;
-			6)
-				printf "\\n"
-				if Check_Lock menu; then
-					Menu_AllowanceStartDay
-				fi
-				PressEnter
-				break
-			;;
-			b)
-				printf "\\n"
-				if Check_Lock menu; then
-					Check_Bandwidth_Usage
-					Clear_Lock
 				fi
 				PressEnter
 				break
@@ -1028,10 +1204,10 @@ MainMenu(){
 				printf "\\n"
 				if [ "$(ScriptStorageLocation check)" = "jffs" ]; then
 					ScriptStorageLocation usb
-					Create_Symlinks
+#					Create_Symlinks
 				elif [ "$(ScriptStorageLocation check)" = "usb" ]; then
 					ScriptStorageLocation jffs
-					Create_Symlinks
+#					Create_Symlinks
 				fi
 				break
 			;;
@@ -1073,6 +1249,24 @@ MainMenu(){
 					esac
 				done
 			;;
+
+# for debug use - remove when release
+			don)
+				debug=1
+				PressEnter
+				break
+			;;
+			doff)
+				debug=0
+				PressEnter
+				break
+			;;
+			scan)
+				ScanBadBlocks
+				PressEnter
+				break
+			;;
+	
 			*)
 				printf "\\nPlease choose a valid option\\n\\n"
 			;;
@@ -1105,16 +1299,17 @@ Menu_Install(){
 	Set_Version_Custom_Settings local "$SCRIPT_VERSION"
 	Set_Version_Custom_Settings server "$SCRIPT_VERSION"
 	ScriptStorageLocation load
-	Create_Symlinks
+#	Create_Symlinks
 	
 #	Update_File mtdmon
 	Update_File mtd_check
-#	Update_File shared-jy.tar.gz
 	
-	Auto_Startup create 2>/dev/null
+#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
 #	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
+	DoRecommendedMtdDevs
+	CreateMTDLog
 	Clear_Lock
 	ScriptHeader
 	MainMenu
@@ -1143,16 +1338,17 @@ Menu_Startup(){
 	Create_Dirs
 	Conf_Exists
 	ScriptStorageLocation load
-	Create_Symlinks
-	Auto_Startup create 2>/dev/null
+#	Create_Symlinks
+#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
 #	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
 #	Mount_WebUI
+	GetMTDDevs
 	Clear_Lock
 }
 
-Menu_Edit(){
+Set_Edit() {
 	texteditor=""
 	exitmenu="false"
 	
@@ -1182,22 +1378,14 @@ Menu_Edit(){
 			;;
 		esac
 	done
+}
 	
-	if [ "$exitmenu" != "true" ]; then
-		CONFFILE="$SCRIPT_STORAGE_DIR/mtdmon.conf"
-#		oldmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
-		$texteditor "$CONFFILE"
-#		newmd5="$(md5sum "$CONFFILE" | awk '{print $1}')"
-#		if [ "$oldmd5" != "$newmd5" ]; then
-#			/opt/etc/init.d/S33vnstat restart >/dev/null 2>&1
-#			TZ=$(cat /etc/TZ)
-#			export TZ
-#			Check_Bandwidth_Usage silent
-#			Clear_Lock
-#			printf "\\n"
-#			PressEnter
-#		fi
-	fi
+Menu_Edit(){
+
+	Set_Edit
+
+	CONFFILE="$SCRIPT_STORAGE_DIR/mtdmon.conf"
+	$texteditor "$CONFFILE"
 	Clear_Lock
 }
 
@@ -1208,15 +1396,15 @@ Menu_Uninstall(){
 		ps | grep -v grep | grep -v $$ | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	fi
 	Print_Output true "Removing $SCRIPT_NAME..." "$PASS"
-	Auto_Startup delete 2>/dev/null
+#	Auto_Startup delete 2>/dev/null
 	Auto_Cron delete 2>/dev/null
-	Auto_ServiceEvent delete 2>/dev/null
+#	Auto_ServiceEvent delete 2>/dev/null
 	
 	Shortcut_Script delete
 	
 	SETTINGSFILE="/jffs/addons/custom_settings.txt"
-	sed -i '/dnvnstat_version_local/d' "$SETTINGSFILE"
-	sed -i '/dnvnstat_version_server/d' "$SETTINGSFILE"
+	sed -i '/mtdmon_version_local/d' "$SETTINGSFILE"
+	sed -i '/mtdmon_version_server/d' "$SETTINGSFILE"
 	
 	rm -f "/jffs/scripts/$SCRIPT_NAME"
 	Clear_Lock
@@ -1238,7 +1426,6 @@ NTP_Ready(){
 			exit 1
 		else
 			Print_Output true "NTP synced, $SCRIPT_NAME will now continue" "$PASS"
-			/opt/etc/init.d/S33vnstat start >/dev/null 2>&1
 			Clear_Lock
 		fi
 	fi
@@ -1327,11 +1514,10 @@ if [ -z "$1" ]; then
 	Create_Dirs
 	Conf_Exists
 	ScriptStorageLocation load
-	Create_Symlinks
-	Auto_Startup create 2>/dev/null
+#	Create_Symlinks
+#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
 	Shortcut_Script create
-	Process_Upgrade
 	ScriptHeader
 	MainMenu
 	exit 0
@@ -1377,11 +1563,10 @@ case "$1" in
 		Create_Dirs
 		Conf_Exists
 		ScriptStorageLocation load
-		Create_Symlinks
-		Auto_Startup create 2>/dev/null
+#		Create_Symlinks
+#		Auto_Startup create 2>/dev/null
 		Auto_Cron create 2>/dev/null
 		Shortcut_Script create
-		Process_Upgrade
 		Generate_CSVs
 		Clear_Lock
 		exit 0
@@ -1412,6 +1597,14 @@ case "$1" in
 		SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
 		Update_Version force
 		exit 0
+	;;
+	debug)
+		debug=1
+		ScanBadBlocks
+		ShowBBReport
+		debug=0
+
+		exit
 	;;
 	*)
 		ScriptHeader
