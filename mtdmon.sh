@@ -35,7 +35,7 @@ SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
 MTDAPP_REPO="https://raw.githubusercontent.com/JGrana01/mtd_check/$MTDAPP_BRANCH"
 readonly SCRIPT_DIR="/jffs/addons/$SCRIPT_NAME.d"
 
-# No web page support at this time
+# No web page support at this time but leave for now
 readonly SCRIPT_WEBPAGE_DIR="$(readlink /www/user)"
 readonly SCRIPT_WEB_DIR="$SCRIPT_WEBPAGE_DIR/$SCRIPT_NAME"
 readonly SHARED_DIR="/jffs/addons/shared-jy"
@@ -178,14 +178,12 @@ Update_Check(){
 	if [ "$localver" != "$serverver" ]; then
 		doupdate="version"
 		Set_Version_Custom_Settings server "$serverver"
-		echo 'var updatestatus = "'"$serverver"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 	else
 		localmd5="$(md5sum "/jffs/scripts/$SCRIPT_NAME" | awk '{print $1}')"
 		remotemd5="$(curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | md5sum | awk '{print $1}')"
 		if [ "$localmd5" != "$remotemd5" ]; then
 			doupdate="md5"
 			Set_Version_Custom_Settings server "$serverver-hotfix"
-			echo 'var updatestatus = "'"$serverver-hotfix"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 		fi
 	fi
 	echo "$doupdate,$localver,$serverver"
@@ -332,19 +330,7 @@ Create_Dirs(){
 		mkdir -p "$CSV_OUTPUT_DIR"
 	fi
 	
-	if [ ! -d "$SHARED_DIR" ]; then
-		mkdir -p "$SHARED_DIR"
-	fi
 	
-}
-
-### Create symbolic links to /www/user for WebUI files to avoid file duplication ###
-Create_Symlinks(){
-	return  ## no web yet
-	
-	if [ ! -d "$SHARED_WEB_DIR" ]; then
-		ln -s "$SHARED_DIR" "$SHARED_WEB_DIR" 2>/dev/null
-	fi
 }
 
 
@@ -480,99 +466,6 @@ Auto_Cron(){
 
 Download_File(){
 	/usr/sbin/curl -fsL --retry 3 "$1" -o "$2"
-}
-
-Get_WebUI_Page(){
-	MyPage="none"
-	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-		page="/www/user/user$i.asp"
-		if [ -f "$page" ] && [ "$(md5sum < "$1")" = "$(md5sum < "$page")" ]; then
-			MyPage="user$i.asp"
-			return
-		elif [ "$MyPage" = "none" ] && [ ! -f "$page" ]; then
-			MyPage="user$i.asp"
-		fi
-	done
-}
-
-### function based on @dave14305's FlexQoS webconfigpage function ###
-Get_WebUI_URL(){
-	urlpage=""
-	urlproto=""
-	urldomain=""
-	urlport=""
-
-	urlpage="$(sed -nE "/$SCRIPT_NAME/ s/.*url\: \"(user[0-9]+\.asp)\".*/\1/p" /tmp/menuTree.js)"
-	if [ "$(nvram get http_enable)" -eq 1 ]; then
-		urlproto="https"
-	else
-		urlproto="http"
-	fi
-	if [ -n "$(nvram get lan_domain)" ]; then
-		urldomain="$(nvram get lan_hostname).$(nvram get lan_domain)"
-	else
-		urldomain="$(nvram get lan_ipaddr)"
-	fi
-	if [ "$(nvram get ${urlproto}_lanport)" -eq 80 ] || [ "$(nvram get ${urlproto}_lanport)" -eq 443 ]; then
-		urlport=""
-	else
-		urlport=":$(nvram get ${urlproto}_lanport)"
-	fi
-
-	if echo "$urlpage" | grep -qE "user[0-9]+\.asp"; then
-		echo "${urlproto}://${urldomain}${urlport}/${urlpage}" | tr "A-Z" "a-z"
-	else
-		echo "WebUI page not found"
-	fi
-}
-### ###
-
-### locking mechanism code credit to Martineau (@MartineauUK) ###
-Mount_WebUI(){
-	Print_Output true "Mounting WebUI tab for $SCRIPT_NAME" "$PASS"
-	LOCKFILE=/tmp/addonwebui.lock
-	FD=386
-	eval exec "$FD>$LOCKFILE"
-	flock -x "$FD"
-	Get_WebUI_Page "$SCRIPT_DIR/vnstat-ui.asp"
-	if [ "$MyPage" = "none" ]; then
-		Print_Output true "Unable to mount $SCRIPT_NAME WebUI page, exiting" "$CRIT"
-		flock -u "$FD"
-		return 1
-	fi
-	cp -f "$SCRIPT_DIR/vnstat-ui.asp" "$SCRIPT_WEBPAGE_DIR/$MyPage"
-	echo "$SCRIPT_NAME" > "$SCRIPT_WEBPAGE_DIR/$(echo $MyPage | cut -f1 -d'.').title"
-	
-	if [ "$(uname -o)" = "ASUSWRT-Merlin" ]; then
-		if [ ! -f /tmp/index_style.css ]; then
-			cp -f /www/index_style.css /tmp/
-		fi
-		
-		if ! grep -q '.menu_Addons' /tmp/index_style.css ; then
-			echo ".menu_Addons { background: url(ext/shared-jy/addons.png); }" >> /tmp/index_style.css
-		fi
-		
-		umount /www/index_style.css 2>/dev/null
-		mount -o bind /tmp/index_style.css /www/index_style.css
-		
-		if [ ! -f /tmp/menuTree.js ]; then
-			cp -f /www/require/modules/menuTree.js /tmp/
-		fi
-		
-		sed -i "\\~$MyPage~d" /tmp/menuTree.js
-		
-		if ! grep -q 'menuName: "Addons"' /tmp/menuTree.js ; then
-			lineinsbefore="$(( $(grep -n "exclude:" /tmp/menuTree.js | cut -f1 -d':') - 1))"
-			sed -i "$lineinsbefore"'i,\n{\nmenuName: "Addons",\nindex: "menu_Addons",\ntab: [\n{url: "javascript:var helpwindow=window.open('"'"'/ext/shared-jy/redirect.htm'"'"')", tabName: "Help & Support"},\n{url: "NULL", tabName: "__INHERIT__"}\n]\n}' /tmp/menuTree.js
-		fi
-		
-		sed -i "/url: \"javascript:var helpwindow=window.open('\/ext\/shared-jy\/redirect.htm'/i {url: \"$MyPage\", tabName: \"$SCRIPT_NAME\"}," /tmp/menuTree.js
-		
-		umount /www/require/modules/menuTree.js 2>/dev/null
-		mount -o bind /tmp/menuTree.js /www/require/modules/menuTree.js
-	fi
-	flock -u "$FD"
-	Print_Output true "Mounted $SCRIPT_NAME WebUI page as $MyPage" "$PASS"
 }
 
 Shortcut_Script(){
@@ -1634,12 +1527,8 @@ Menu_Startup(){
 	Create_Dirs
 	Conf_Exists
 	ScriptStorageLocation load
-#	Create_Symlinks
-#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
-#	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
-#	Mount_WebUI
 	GetMTDDevs
 	Clear_Lock
 }
@@ -1692,9 +1581,7 @@ Menu_Uninstall(){
 		ps | grep -v grep | grep -v $$ | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	fi
 	Print_Output true "Removing $SCRIPT_NAME..." "$PASS"
-#	Auto_Startup delete 2>/dev/null
 	Auto_Cron delete 2>/dev/null
-#	Auto_ServiceEvent delete 2>/dev/null
 	
 	Shortcut_Script delete
 	
@@ -1703,6 +1590,7 @@ Menu_Uninstall(){
 	sed -i '/mtdmon_version_server/d' "$SETTINGSFILE"
 	
 	rm -f "/jffs/scripts/$SCRIPT_NAME"
+	rm -f "SCRIPT_DIR"
 	Clear_Lock
 	Print_Output true "Uninstall completed" "$PASS"
 }
