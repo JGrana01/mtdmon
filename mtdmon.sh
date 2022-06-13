@@ -1623,7 +1623,7 @@ Menu_Uninstall(){
 	sed -i '/mtdmon_version_server/d' "$SETTINGSFILE"
 	
 	rm -f "/jffs/scripts/$SCRIPT_NAME"
-	rm -rf "SCRIPT_DIR"
+	rm -rf "$SCRIPT_DIR"
 	Clear_Lock
 	Print_Output true "Uninstall completed" "$PASS"
 }
@@ -1744,6 +1744,10 @@ case "$1" in
 	install)
 		Check_Lock
 		Menu_Install
+		printf "\\nDoing inital mtd scan on recommended devices..."
+		ScanBadBlocks
+		CheckMTDList Info
+		sleep 3
 		exit 0
 	;;
 	startup)
