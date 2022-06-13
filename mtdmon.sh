@@ -1,4 +1,4 @@
-
+#!/bin/sh
 #################################################
 ##                                             ##
 ##                mtdmon                       ## 
@@ -52,6 +52,7 @@ MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
 MTDLOG="$SCRIPT_DIR/mtdlog"
 MTDREPORT="$SCRIPT_DIR/mtdreport"
 MTDWEEKLY="$SCRIPT_DIR/mtdweekly"
+LASTRESULTS="$SCRIPT_DIR/lastresult"
 debug=0
 
 
@@ -838,7 +839,7 @@ DailyEmail(){
 							Auto_Cron weekly
 							break
 						;;
-						2)
+						3)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=daily/' "$SCRIPT_CONF"
 							Auto_Cron daily
 							break
@@ -1170,9 +1171,9 @@ CreateMTDLog(){
 
 ShowBBReport(){
 
-	repdate=`date +"%m-%d-%Y-$h-$m"`
+	repdate=$(date +"%H.%M on %F")
 	printf "\\nMtdmon Report $repdate\\n"
-	printf "\\n\\nmtd dev\t   # Bad Blocks\t# Corr ECC\t# Uncorrectable ECC\\n"
+	printf "\\n\\nmtd dev\t   # Bad Blocks\t\t# Corr ECC\t# Uncorrectable ECC\\n"
 	printf "-----------------------------------------------------------------\n"
         while IFS=  read -r line
         do
@@ -1180,7 +1181,7 @@ ShowBBReport(){
                 numbbs="$(echo $line | cut -d' ' -f2)"
                 numcorr="$(echo $line | cut -d' ' -f3)"
                 numuncorr="$(echo $line | cut -d' ' -f4)"
-		printf " $mtdevice\t\t$numbbs\t\t  $numcorr\t$numuncorr\\n" 
+		printf " $mtdevice\t\t$numbbs\t\t  $numcorr\t\t  $numuncorr\\n" 
         done < $MTDLOG
 }
 
@@ -1215,10 +1216,13 @@ ScanBadBlocks(){
 	cp $MTDLOG $MTDLOG.old
 	
 	founderror=0
+	newecc=0
+	newuncor=0
+	newebb=0
 
-	newdate="`date +"%m-%d-%Y-%h-%m" `"
+	newdate=$(date +"%H.%M on %F")
 
-	printf "\\nmtdmon report $newdate\\n" > $MTDREPORT
+	printf "\\nMtdmonReport Date $newdate\\n" > $MTDREPORT
 
 	CreateMTDLog
 
@@ -1245,22 +1249,30 @@ ScanBadBlocks(){
                 if [ "$latestbbs" -gt "$numbbs" ]; then
 			printf "\\nNew Bad Block(s) detected on $mtdevice. Previous number: $numbbs, new number: $latestbbs" >> $MTDREPORT
 			founderror=1
+			newbb=$((newbb+1))
 		fi
                 if [ "$latestcorr" -gt "$numcorr" ]; then
 			printf "\\nNew Correctable ECC Error(s) detected on $mtdevice. Previous number: $numcorr, new number: $latestcorr" >> $MTDREPORT
 			founderror=1
+			newecc=$((newecc+1))
 		fi
                 if [ "$latestuncorr" -gt "$numuncorr" ]; then
 			printf "\\nNew Uncorrectable ECC Error(s) detected on $mtdevice. Previous number: $numuncorr, new number: $latestuncorr" >> $MTDREPORT
 			founderror=1
+			newuncor=$((newuncor+1))
 		fi
         done < $MTDLOG.old
 		cat $MTDREPORT >> $MTDWEEKLY # save info to end of weekly report
 		if [ $founderror == 0 ]; then
 			printf "\\nMonitoring:\\n" >> $MTDREPORT
 			cat $MTDMONLIST >> $MTDREPORT
+			printf "\\nReport Date $newdate\\n" >> $MTDREPORT
 			printf "\\n All monitored mtd devices checked Ok\\n" >> $MTDREPORT
+			echo "\\n\\n${PASS}     Last check on $newdate - all mtd ok${CLEARFORMAT}\\n\\n" > $LASTRESULTS
+		else
+			echo "\\n\\n${ERR}Errors found during check on $newdate\\n Bad Blocks: $newbb  ECC Errors: $newecc  Uncorrectable ECC: $newuncor${CLEARFORMAT}\\n\\n" > $LASTRESULTS
 		fi
+	
 		printf "\\n" >> $MTDREPORT
 		printf "\\n" >> $MTDWEEKLY
 }
@@ -1283,6 +1295,17 @@ mtdmon_daily(){
 		mv $MTDWEEKLY $MTDWEEKLY.lastweek
 	fi
 }
+
+
+PrintLastResults(){
+	if [ -f "$LASTRESULTS" ]; then
+		lastresult=`cat $LASTRESULTS`
+		printf "$lastresult"
+	fi
+	printf "\\n"
+}
+
+
 
 
 
@@ -1313,12 +1336,23 @@ MainMenu(){
 	elif [ "$MENU_DAILYEMAIL" = "none" ]; then
 		MENU_DAILYEMAIL="${ERR}DISABLED"
 	fi
+
+	if  [ "$SENDSMS" = "no" ]; then
+		DOSMS="${ERR}DISABLED"
+	else
+		DOSMS="${PASS}ENABLED"
+	fi
+
+	PrintLastResults
+
+
 	printf "1.    Check mtd for Bad Blocks and ECC now\\n\\n"
 	printf "2.    Run Verbose mtd stats now\\n\\n"
 	printf "l.    View/Set list of mtd devies to monitor/check\\n\\n"
 	printf "r.    Show a report of the most recent check\\n\\n"
-	printf "d.    Toggle emails for daily summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
+	printf "d.    Enable/disable emails for daily or weekly summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
 	printf "e.    Toggle emails for error reporting\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
+	printf "t.    Toggle SMS via email\\n      Currently: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
 	printf "v.    Edit mtdmon conf\\n\\n"
 	printf "s.    Toggle storage location for stats and conf\\n      Current location is ${SETTING}%s${CLEARFORMAT} \\n\\n" "$(ScriptStorageLocation check)"
 	printf "u.    Check for updates\\n"
@@ -1329,13 +1363,14 @@ MainMenu(){
 	printf "${BOLD}##################################################${CLEARFORMAT}\\n"
 	printf "\\n"
 	
-	while true; do
+	while true; do	
 		printf "Choose an option:  "
 		read -r menu
 		case "$menu" in
 			1)
 				printf "\\n"
 				if Check_Lock menu; then
+					ScanBadBlocks
 					CheckMTDList Info
 					Clear_Lock
 				fi
@@ -1393,10 +1428,8 @@ MainMenu(){
 				printf "\\n"
 				if [ "$(ScriptStorageLocation check)" = "jffs" ]; then
 					ScriptStorageLocation usb
-#					Create_Symlinks
 				elif [ "$(ScriptStorageLocation check)" = "usb" ]; then
 					ScriptStorageLocation jffs
-#					Create_Symlinks
 				fi
 				break
 			;;
