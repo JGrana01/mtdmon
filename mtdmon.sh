@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.1.0"
+readonly SCRIPT_VERSION="v0.3.0"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -51,6 +51,8 @@ VALIDMTDS="$SCRIPT_DIR/validmtds"
 MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
 MTDLOG="$SCRIPT_DIR/mtdlog"
 MTDREPORT="$SCRIPT_DIR/mtdreport"
+MTDWEEKLY="$SCRIPT_DIR/mtdweekly"
+debug=0
 
 
 readonly SHARED_REPO="https://raw.githubusercontent.com/jackyaz/shared-jy/master"
@@ -76,6 +78,17 @@ Print_Output(){
 		logger -t "$SCRIPT_NAME" "$2"
 	fi
 	printf "${BOLD}${3}%s${CLEARFORMAT}\\n\\n" "$2"
+}
+
+# print out a message if debug is enabled
+# $1 = print to syslog, $2 = message to print
+Debug_Output(){
+	if [ $debug = 1 ]; then
+		if [ "$1" = "true" ]; then
+			logger -t "$SCRIPT_NAME" "$2"
+		fi
+		printf "${BOLD}${3}%s${CLEARFORMAT}\\n\\n" "$2"
+	fi
 }
 
 ### Check firmware version contains the "am_addons" feature flag ###
@@ -158,7 +171,6 @@ Set_Version_Custom_Settings(){
 
 ### Checks for changes to Github version of script and returns reason for change (version or md5/minor), local version and server version ###
 Update_Check(){
-	echo 'var updatestatus = "InProgress";' > "$SCRIPT_WEB_DIR/detect_update.js"
 	doupdate="false"
 	localver=$(grep "SCRIPT_VERSION=" "/jffs/scripts/$SCRIPT_NAME" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
 	/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep -qF "de-vnull" || { Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
@@ -175,9 +187,6 @@ Update_Check(){
 			Set_Version_Custom_Settings server "$serverver-hotfix"
 			echo 'var updatestatus = "'"$serverver-hotfix"'";'  > "$SCRIPT_WEB_DIR/detect_update.js"
 		fi
-	fi
-	if [ "$doupdate" = "false" ]; then
-		echo 'var updatestatus = "None";' > "$SCRIPT_WEB_DIR/detect_update.js"
 	fi
 	echo "$doupdate,$localver,$serverver"
 }
@@ -232,7 +241,7 @@ Update_Version(){
 		serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
 		Print_Output true "Downloading latest version ($serverver) of $SCRIPT_NAME" "$PASS"
 		Update_File mtdmon.conf
-#		Update_File mtd_check
+		Update_File mtd_check
 		/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" -o "/jffs/scripts/$SCRIPT_NAME" && Print_Output true "$SCRIPT_NAME successfully updated"
 		chmod 0755 "/jffs/scripts/$SCRIPT_NAME"
 		Set_Version_Custom_Settings local "$serverver"
@@ -327,13 +336,6 @@ Create_Dirs(){
 		mkdir -p "$SHARED_DIR"
 	fi
 	
-#	if [ ! -d "$SCRIPT_WEBPAGE_DIR" ]; then
-#		mkdir -p "$SCRIPT_WEBPAGE_DIR"
-#	fi
-	
-#	if [ ! -d "$SCRIPT_WEB_DIR" ]; then
-#		mkdir -p "$SCRIPT_WEB_DIR"
-#	fi
 }
 
 ### Create symbolic links to /www/user for WebUI files to avoid file duplication ###
@@ -363,7 +365,7 @@ Conf_Exists(){
 		fi
 		return 0
 	else
-		{ echo "DAILYEMAIL=no"; echo "ERROREMAIL=yes";  echo "USAGEEMAIL=false"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
+		{ echo "DAILYEMAIL=no"; echo "ERROREMAIL=yes";  echo "EMAILTYPE=text"; echo "SENDSMS=no";  echo "TO_SMS=none"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
 		return 1
 	fi
 }
@@ -441,13 +443,21 @@ Auto_Cron(){
 		create)
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_check")
 			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
-				cru a "${SCRIPT_NAME}_check" "*/5 * * * * /jffs/scripts/$SCRIPT_NAME check"
+				cru a "${SCRIPT_NAME}_check" "10 0 * * * /jffs/scripts/$SCRIPT_NAME check"
+			fi
+		;;
+		daily)
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_daily")
+			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
+				cru a "${SCRIPT_NAME}_daily" "30 0 * * * /jffs/scripts/$SCRIPT_NAME daily"
+			fi
+		;;
+		weekly)
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_weekly")
+			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
+				cru a "${SCRIPT_NAME}_check" "35 0 * * 0 /jffs/scripts/$SCRIPT_NAME weekly"
 			fi
 			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_summary")
-			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
-				cru a "${SCRIPT_NAME}_summary" "59 23 * * * /jffs/scripts/$SCRIPT_NAME summary"
-			fi
 		;;
 		delete)
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_check")
@@ -455,9 +465,14 @@ Auto_Cron(){
 				cru d "${SCRIPT_NAME}_check"
 			fi
 			
-			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_summary")
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_daily")
 			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
-				cru d "${SCRIPT_NAME}_summary"
+				cru d "${SCRIPT_NAME}_daily"
+			fi
+
+			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_weekly")
+			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
+				cru d "${SCRIPT_NAME}_weekly"
 			fi
 		;;
 	esac
@@ -624,22 +639,18 @@ ScriptStorageLocation(){
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
 			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/config" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/jffs/addons/$SCRIPT_NAME.d/config.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/config"
+			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
 		jffs)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
 			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/config" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			mv "/opt/share/$SCRIPT_NAME.d/config.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/config"
+			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
 		check)
@@ -653,7 +664,8 @@ ScriptStorageLocation(){
 			elif [ "$STORAGELOCATION" = "jffs" ]; then
 				SCRIPT_STORAGE_DIR="/jffs/addons/$SCRIPT_NAME.d"
 			fi
-			
+			TO_SMS=$(grep "TO_SMS" "$SCRIPT_CONF" | cut -f2 -d"=")
+			SENDSMS=$(grep "SENDSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
 			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
 			MTDMON_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/mtdmon.txt"
 		;;
@@ -685,8 +697,6 @@ Generate_Stats(){
 	Create_Dirs
 	Conf_Exists
 	ScriptStorageLocation load
-#	Create_Symlinks
-#	Auto_Startup create 2>/dev/null
 	Auto_Cron create 2>/dev/null
 	Shortcut_Script create
 	TZ=$(cat /etc/TZ)
@@ -730,37 +740,50 @@ Generate_Email(){
 	fi
 	
 	emailtype="$1"
-	if [ "$emailtype" = "daily" ]; then
-		Print_Output true "Attempting to send summary statistic email"
-		if [ "$(DailyEmail check)" = "text" ];  then
-			# plain text email to send #
+	
+	if [ "$emailtype" = "daily" ] || [ "$emailtype" = "weekly" ]; then
+		Print_Output true "Attempting to send daily/weekly check email"
+			# plain text email to send or text #
 			{
 				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-				echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon stats as of $(date +"%H.%M on %F")"
+				if [ "$emailtype" = "daily" ]; then
+					echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon daily stats as of $(date +"%H.%M on %F")"
+				else
+					echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon weekly stats as of $(date +"%H.%M on %F")"
+				fi
 				echo "Date: $(date -R)"
 				echo ""
-				printf "%s\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.mtdmonusage" | cut -f2 -d'"')"
 			} > /tmp/mail.txt
-			cat "$MTDMON_OUTPUT_FILE" >>/tmp/mail.txt
-		fi
+			if [ "$emailtype" = "daily" ]; then
+				cat "$MTDREPORT" >>/tmp/mail.txt
+			else
+				cat "$MTDWEEKLY" >>/tmp/mail.txt
+			fi
 	elif [ "$emailtype" = "error" ]; then
 		Print_Output true "Attempting to send error email"
-		if [ "$(DailyEmail check)" = "text" ];  then
+			# plain text emails to send #
+			{
+				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
+				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
+				echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon Detected Error(s) as of $(date +"%H.%M on %F")"
+				echo "Date: $(date -R)"
+				echo ""
+			} > /tmp/mail.txt
+			cat "$MTDREPORT" >>/tmp/mail.txt
+	elif [ "$emailtype" = "test" ]; then
+		Print_Output true "Attempting to send test email"
 			# plain text email to send #
 			{
 				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-				echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon detected error(s) as of $(date +"%H.%M on %F")"
-				echo "Date: $(date -R)"
+				echo "Subject: $FRIENDLY_ROUTER_NAME - successful mtdmon Email test"
 				echo ""
-				printf "%s\\n\\n" "$(grep " usagestring" "$SCRIPT_STORAGE_DIR/.mtdmonusage" | cut -f2 -d'"')"
 			} > /tmp/mail.txt
-			cat "$MTDMON_OUTPUT_FILE" >>/tmp/mail.txt
-		fi
+			echo "" >> /tmp/mail.txt
 	fi
 	
-	#Send Email
+	#Send Email or sms
 	/usr/sbin/curl -s --show-error --url "$PROTOCOL://$SMTP:$PORT" \
 	--mail-from "$FROM_ADDRESS" --mail-rcpt "$TO_ADDRESS" \
 	--upload-file /tmp/mail.txt \
@@ -768,18 +791,101 @@ Generate_Email(){
 	--user "$USERNAME:$PASSWORD" $SSL_FLAG
 	if [ $? -eq 0 ]; then
 		echo ""
-		[ -z "$5" ] && Print_Output true "Email sent successfully" "$PASS"
+		[ -z "$5" ] && Print_Output true "Message sent successfully" "$PASS"
+if [ $debug = 0 ]; then
 		rm -f /tmp/mail.txt
+fi
 		PASSWORD=""
 		return 0
 	else
 		echo ""
-		[ -z "$5" ] && Print_Output true "Email failed to send" "$ERR"
+		[ -z "$5" ] && Print_Output true "Message failed to send" "$ERR"
+if [ $debug = 0 ]; then
 		rm -f /tmp/mail.txt
+fi
 		PASSWORD=""
 		return 1
 	fi
 }
+
+Generate_Message(){
+	if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
+		. /jffs/addons/amtm/mail/email.conf
+		PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
+	else
+		Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
+		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+		return 1
+	fi
+	
+	PASSWORD=""
+	if /usr/sbin/openssl aes-256-cbc -d -in "$PWENCFILE" -pass pass:ditbabot,isoi >/dev/null 2>&1 ; then
+		# old OpenSSL 1.0.x
+		PASSWORD="$(/usr/sbin/openssl aes-256-cbc -d -in "$PWENCFILE" -pass pass:ditbabot,isoi 2>/dev/null)"
+	elif /usr/sbin/openssl aes-256-cbc -d -md md5 -in "$PWENCFILE" -pass pass:ditbabot,isoi >/dev/null 2>&1 ; then
+		# new OpenSSL 1.1.x non-converted password
+		PASSWORD="$(/usr/sbin/openssl aes-256-cbc -d -md md5 -in "$PWENCFILE" -pass pass:ditbabot,isoi 2>/dev/null)"
+	elif /usr/sbin/openssl aes-256-cbc $emailPwEnc -d -in "$PWENCFILE" -pass pass:ditbabot,isoi >/dev/null 2>&1 ; then
+		# new OpenSSL 1.1.x converted password with -pbkdf2 flag
+		PASSWORD="$(/usr/sbin/openssl aes-256-cbc $emailPwEnc -d -in "$PWENCFILE" -pass pass:ditbabot,isoi 2>/dev/null)"
+	fi
+	
+	emailtype="$1"
+	
+	if [ "$emailtype" = "daily" ]; then
+		Print_Output true "Attempting to send daily/weekly sms message"
+		# plain text email to send or text #
+		{
+		echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
+		echo "To: <$TO_SMS>"
+		echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon daily check as of $(date +"%H.%M on %F") - OK"
+		echo ""
+		} > /tmp/mail.txt
+	elif [ "$emailtype" = "error" ]; then
+		Print_Output true "Attempting to send error sms message"
+		# plain text email/sms to send #
+		{
+		echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
+		echo "To: \"$TO_NAME\" <$TO_SMS>"
+		echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon Detected Error(s) as of $(date +"%H.%M on %F")"
+		echo ""
+		} > /tmp/mail.txt
+	elif [ "$emailtype" = "test" ]; then
+		Print_Output true "Attempting to send test sms email"
+		# plain text email/sms to send #
+		{
+		echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
+		echo "To: \"$TO_NAME\" <$TO_SMS>"
+		echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon successful sms test as of $(date +"%H.%M on %F")"
+		echo ""
+		} > /tmp/mail.txt
+	fi
+	
+	#Send SMS via Email
+	/usr/sbin/curl -s --show-error --url "$PROTOCOL://$SMTP:$PORT" \
+	--mail-from "$FROM_ADDRESS" --mail-rcpt "$TO_SMS" \
+	--upload-file /tmp/mail.txt \
+	--ssl-reqd \
+	--user "$USERNAME:$PASSWORD" $SSL_FLAG
+	if [ $? -eq 0 ]; then
+		echo ""
+		[ -z "$5" ] && Print_Output true "Message sent successfully" "$PASS"
+if [ $debug = 0 ]; then
+		rm -f /tmp/mail.txt
+fi
+		PASSWORD=""
+		return 0
+	else
+		echo ""
+		[ -z "$5" ] && Print_Output true "Message failed to send" "$ERR"
+if [ $debug = 0 ]; then
+		rm -f /tmp/mail.txt
+fi
+		PASSWORD=""
+		return 1
+	fi
+}
+
 
 # encode image for email inline
 # $1 : image content id filename (match the cid:filename.png in html document)
@@ -819,9 +925,11 @@ DailyEmail(){
 			if [ -z "$2" ]; then
 				ScriptHeader
 				exitmenu="false"
-				printf "\\n${BOLD}mtdmon can send an email daily or when it detects an error:${CLEARFORMAT}\\n"
+				printf "\\n${BOLD}mtdmon can send an email when it detects an error:${CLEARFORMAT}\\n"
+				printf "${BOLD}It can also email a daily or weekly report:${CLEARFORMAT}\\n"
 				printf "1.    Only when an error is detected\\n"
-				printf "2.    Daily (and also when an error is detected\\n"
+				printf "2.    Weekly (and also when an error is detected\\n"
+				printf "3.    Daily (and also when an error is detected\\n"
 				printf "\\ne.    Exit to main menu\\n"
 				
 				while true; do
@@ -833,7 +941,13 @@ DailyEmail(){
 							break
 						;;
 						2)
+							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=weekly/' "$SCRIPT_CONF"
+							Auto_Cron weekly
+							break
+						;;
+						2)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=daily/' "$SCRIPT_CONF"
+							Auto_Cron daily
 							break
 						;;
 						e)
@@ -867,8 +981,145 @@ DailyEmail(){
 			DAILYEMAIL=$(grep "DAILYEMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
 			echo "$DAILYEMAIL"
 		;;
+		type)
+			EMAILTYPE=$(grep "EMAILTYPE" "$SCRIPT_CONF" | cut -f2 -d"=")
+			echo "$EMAILTYPE"
+
+		;;
 	esac
 }
+
+
+SetSMSAddr(){
+	case "$1" in
+		set)
+			printf "\\nPlease enter your SMS email address in the form:\\n\\n"
+			printf "\\n${BOLD}    1234567890@mobilegw.com.${CLEARFORMAT}\\n"
+			printf "\\n\\nWhere 1234567890 is your 10 digit mobile number and moblilegw.com is your mobile carriers SMS gateway\\n"
+			printf "The 10 digit mobile number is the most common. Check with your carrier.\\n"
+			printf "In some cases, the 10 digit number might be shorter or require a pin or code\\n"
+			printf "mtdmon will do very little checking on the entered address. Best to run a test message from the menu when done!\\n"
+			printf "\\nPlease enter the address: "
+			read inadd
+			addln=`echo $inadd | awk '{print length}'`
+			if [ $addln -gt 8 ]; then
+				TO_SMS=$inadd
+			else
+				printf "\\nThe length of $inadd seems too small\\n"
+				sleep 3
+				exit
+			fi
+				
+			sed -i 's/^TO_SMS.*$/TO_SMS='"$TO_SMS"'/' "$SCRIPT_CONF"
+		;;
+		show)
+			echo $TO_SMS
+		;;
+		reset)
+				TO_SMS=none
+				sed -i 's/^TO_SMS.*$/TO_SMS=none/' "$SCRIPT_CONF"
+		;;
+	esac
+}
+
+
+SetUpSMS(){
+	case "$1" in
+		enable)
+			if [ -z "$2" ]; then
+				ScriptHeader
+				exitmenu="false"
+				printf "\\n${BOLD}mtdmon can also send a txt message via email when it detects an error.${CLEARFORMAT}\\n"
+				printf "${BOLD}It can also send a daily text as well as an error.${CLEARFORMAT}\\n"
+				printf "\\nTo send a text message via email, you must use a SMS or MMS to email gateway (email address).\\n"
+				printf "Just substitute your 10-digit cell phone number followed by the SMS gateway of your mobile provider\\n"
+				printf "\\n For example, if your US mobile number is (123) 456-7890 and your mobile provider is Verizon:\\n"
+				printf "\\n the address would be:   1234567890@vtext.com\\n"
+				printf "\\n${BOLD}For a list of mobile carrier SMS gateways, check:\\n     https://avtech.com/articles/138/list-of-email-to-sms-addresses/ .${CLEARFORMAT}\\n\\n"
+				if [ $TO_SMS = "none" ]; then
+					printf "\\nThere is no address setup. Setup now? (Y/N) "
+					read r
+					case "$r" in
+						y) SetSMSAddr set
+						   break
+						;;
+						Y) SetSMSAddr set
+						   break
+						;;
+						*)
+						   printf "\\nYou will need to setup a valid SMS address\\n"
+						   sleep 3
+						   exit
+						;;
+					esac
+				fi
+				printf "\\nYour present SMS email address is ${BOLD} $TO_SMS ${CLEARFORMAT}\\n\\n"
+				printf "1.    Only send when an error is detected\\n"
+				printf "2.    Send Daily (and also when an error is detected\\n"
+				printf "3.    Change SMS email address\\n"
+				printf "4.    Stop sending SMS messages\\n"
+				printf "5.    Send a test message\\n"
+				printf "\\ne.    Exit to main menu\\n"
+				
+				while true; do
+					printf "\\n${BOLD}Choose an option:${CLEARFORMAT}  "
+					read -r smstype
+	 				case "$smstype" in
+						1)
+							sed -i 's/^DAILYSMS.*$/DAILYSMS=error/' "$SCRIPT_CONF"
+							sed -i 's/^SENDSMS.*$/SENDSMS=yes/' "$SCRIPT_CONF"
+							SENDSMS=yes
+							break
+						;;
+						2)
+							sed -i 's/^DAILYSMS.*$/DAILYSMS=daily/' "$SCRIPT_CONF"
+							sed -i 's/^SENDSMS.*$/SENDSMS=yes/' "$SCRIPT_CONF"
+							SENDSMS=yes
+							break
+						;;
+						3)
+							SetSMSAddr set
+							break
+						;;
+						4)
+							sed -i 's/^SENDSMS.*$/SENDSMS=no/' "$SCRIPT_CONF"
+							SENDSMS=no
+							break
+						;;
+						5)
+							Generate_Message test
+							break
+						;;
+						e)
+							exitmenu="true"
+							break
+						;;
+						*)
+							printf "\\nPlease choose a valid option\\n\\n"
+						;;
+					esac
+				done
+				
+				printf "\\n"
+				
+				if [ "$exitmenu" = "true" ]; then
+					return
+				fi
+			else
+				sed -i 's/^DAILYSMS.*$/DAILYSMS='"$2"'/' "$SCRIPT_CONF"
+			fi
+			
+		;;
+		disable)
+			sed -i 's/^DAILYSMS.*$/DAILYSMS=none/' "$SCRIPT_CONF"
+		;;
+		check)
+			DAILYSMS=$(grep "DAILYSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
+			echo "$DAILYSMS"
+		;;
+	esac
+}
+
 
 # start of mtdmon functions
 
@@ -925,7 +1176,7 @@ DoRecommendedMtdDevs() {
 	then
 		validmtds="rootfs data nvram image bootfs jffs misc1 misc2 misc3"
 	else
-		validmtds="brcmnand asus"
+		validmtds="brcmnand asus jffs"
 	fi
 
 	for i in $validmtds
@@ -937,68 +1188,69 @@ DoRecommendedMtdDevs() {
 
 SetMTDList() {
 
-GetMTDDevs
+	GetMTDDevs
 
-exitmenu="false"
+	exitmenu="false"
 
-printf "\\nMtdmon can monitor most all mtd devices or a user defined list\\n"
-printf "There are some mtd devices mtdmon can't check (using check_mtd) such as UBI formatted devices.\\n"
-printf "It is recommended to monitor most devices/partitons such as nvram, bootfs, asus and image partitions (devices)\\n"
-printf "\\n${BOLD}    Not all routers have all of these partitions!${CLEARFORMAT}\\n\\n"
-printf "Mtdmon will automatically select the recommended devices when installed or from menu option 1 in the next menu. \\n\\n"
-PressEnter
-printf "The list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
-cat $MTDEVPART
-printf "\\n\\nmtdmon is presently monitoring:\\n"
-cat $MTDMONLIST
-printf "\\n\\nChoose:\\n"
-printf "1.     Do recommended mtd devices\\n"
-printf "2.     Do All mtd devices\\n"
-printf "3.     Manually edit monitor list\\n"
-printf "4.     Show latest monitor list\\n"
-printf "e.     Exit to main menu\\n"
-while true; do
-	printf "\\n${BOLD}Choose an option:${CLEARFORMAT}  "
-	read -r mtdlist
-	case "$mtdlist" in
-		1)
-			DoRecommendedMtdDevs
-			break
-		;;
-		2)
-			GetMTDDevs
-			break
-		;;
-		3)
-			DoUserList
-			break
-		;;
-		4)
-			cat $MTDMONLIST
-			break
-
-		;;
-		e)
-			exitmenu="true"
-			break
-		;;
-		*)
-			printf "\\nPlease choose a valid option\\n\\n"
-		;;
-	esac
-done
-if [ ! $exitmenu = "true" ]; then
-	printf "\\n\\nThe list of mtd devices mtdmon will check:\\n"
+	printf "\\nMtdmon can monitor most all mtd devices or a user defined list\\n"
+	printf "There are some mtd devices mtdmon can't check (using check_mtd) such as UBI formatted devices.\\n"
+	printf "It is recommended to monitor most devices/partitons such as nvram, bootfs, asus and image partitions (devices)\\n"
+	printf "\\n${BOLD}    Not all routers have all of these partitions!${CLEARFORMAT}\\n\\n"
+	printf "Mtdmon will automatically select the recommended devices when installed or from menu option 1 in the next menu. \\n\\n"
+	PressEnter
+	printf "The list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
+	cat $MTDEVPART
+	printf "\\n\\nmtdmon is presently monitoring:\\n"
 	cat $MTDMONLIST
-fi
-printf "\\n"
+	printf "\\n\\nChoose:\\n"
+	printf "1.     Do recommended mtd devices\\n"
+	printf "2.     Do All mtd devices\\n"
+	printf "3.     Manually edit monitor list\\n"
+	printf "4.     Show latest monitor list\\n"
+	printf "e.     Exit to main menu\\n"
+	while true; do
+		printf "\\n${BOLD}Choose an option:${CLEARFORMAT}  "
+		read -r mtdlist
+		case "$mtdlist" in
+			1)
+				DoRecommendedMtdDevs
+				break
+			;;
+			2)
+				GetMTDDevs
+				break
+			;;
+			3)
+				DoUserList
+				break
+			
+			;;
+			4)
+				cat $MTDMONLIST
+				break
+			;;
+			e)
+				exitmenu="true"
+				break
+			;;
+			*)
+				printf "\\nPlease choose a valid option\\n\\n"
+			;;
+		esac
+	done
+	
+	if [ ! $exitmenu = "true" ]; then
+		printf "\\n\\nThe list of mtd devices mtdmon will check:\\n"
+		cat $MTDMONLIST
+	fi
+	printf "\\n"
 }
 
 CheckMTDList() {
 
-printf "Checking:\\n\\n "
+	printf "Checking:\\n\\n "
 
-       if [ "$1" = "Verbose" ]; then
+       	if [ "$1" = "Verbose" ]; then
                 cflags=""
         else
                 cflags="-e"
@@ -1017,9 +1269,9 @@ CreateMTDLog(){
 
 	for i in `cat $MTDMONLIST | awk '{print $1}'`
 	do
-        	echo -n "$i   " >> $MTDLOG
-        	echo -n "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
-        	echo  "  `date +"%m-%d-%Y-%h-%m" `" >> $MTDLOG
+        	printf "$i   " >> $MTDLOG
+        	printf "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
+        	printf "  `date +"%m-%d-%Y-%h-%m" `\\n" >> $MTDLOG
 	done
 }
 
@@ -1040,6 +1292,30 @@ ShowBBReport(){
 }
 
 
+ReadCheckMTD(){
+
+# read all of mtd device using block size and count
+# if the # blocks read != # blocks on device return error
+# $1 = mtd device $2 = "silent" if no printing on error
+
+bsize=`mtd_check -i $1 | grep -w Block | awk '{ print $3 }'`
+bcount=`mtd_check -i $1 | grep -w blocks | awk '{ print $5 }'`
+
+# read blocks
+/bin/dd if=$1 of=/dev/null bs=$bsize count=$bcount > /tmp/mtddd 2>&1
+
+readbs=`head -1 /tmp/mtddd | awk '{ print $1 }'`
+
+if [ ! "$readbs" = "$bcount+0" ]; then
+	if [ ! $2 = "silent" ]; then
+		echo "didnt read enough"
+		echo "Expected " $bcount+0 "   Got " $readbs
+	fi
+	return 1
+fi
+return 0
+}
+
 
 ScanBadBlocks(){
 
@@ -1047,10 +1323,9 @@ ScanBadBlocks(){
 	
 	founderror=0
 
-
 	newdate="`date +"%m-%d-%Y-%h-%m" `"
 
-	printf "mtdmon report $newdate  " > $MTDREPORT
+	printf "\\nmtdmon report $newdate\\n" > $MTDREPORT
 
 	CreateMTDLog
 
@@ -1070,15 +1345,10 @@ ScanBadBlocks(){
 		latestuncorr=`echo $latestinfo | awk '{print $3}'`
 
 
-if [ $debug = 1 ]; then
-		latestcorr=3
-fi
 
-if [ $debug = 1 ];
-then
-		printf "info latest: bb -- $latestbbs  corr $latestcorr uncor $latestuncorr\\n"
-		printf "info prev: bb -- $numbbs  corr $numcorr uncor $numuncorr\\n"
-fi
+		Debug_Output false "info latest: bb -- $latestbbs  corr $latestcorr uncor $latestuncorr\\n"
+		Debug_Output false "info prev: bb -- $numbbs  corr $numcorr uncor $numuncorr\\n"
+
                 if [ "$latestbbs" -gt "$numbbs" ]; then
 			printf "\\nNew Bad Block(s) detected on $mtdevice. Previous number: $numbbs, new number: $latestbbs" >> $MTDREPORT
 			founderror=1
@@ -1092,11 +1362,35 @@ fi
 			founderror=1
 		fi
         done < $MTDLOG.old
+		cat $MTDREPORT >> $MTDWEEKLY # save info to end of weekly report
 		if [ $founderror == 0 ]; then
-			printf " Ok\\n" >> $MTDREPORT
+			printf "\\nMonitoring:\\n" >> $MTDREPORT
+			cat $MTDMONLIST >> $MTDREPORT
+			printf "\\n All monitored mtd devices checked Ok\\n" >> $MTDREPORT
 		fi
 		printf "\\n" >> $MTDREPORT
+		printf "\\n" >> $MTDWEEKLY
 }
+
+mtdmon_check(){
+
+	founderror=0
+	ScanBadBlocks
+	if [ $founderror = 1 ]; then
+		Generate_Email error
+	fi
+
+}
+mtdmon_daily(){
+
+	if [ "$1" = "daily" ]; then
+		Generate_Email daily
+	else
+		Generate_Email weekly
+		mv $MTDWEEKLY $MTDWEEKLY.lastweek
+	fi
+}
+
 
 
 ScriptHeader(){
@@ -1121,6 +1415,8 @@ MainMenu(){
 		MENU_DAILYEMAIL="${PASS}ENABLED - ERROR"
 	elif [ "$MENU_DAILYEMAIL" = "daily" ]; then
 		MENU_DAILYEMAIL="${PASS}ENABLED - DAILY"
+	elif [ "$MENU_DAILYEMAIL" = "weekly" ]; then
+		MENU_DAILYEMAIL="${PASS}ENABLED - WEEKLY"
 	elif [ "$MENU_DAILYEMAIL" = "none" ]; then
 		MENU_DAILYEMAIL="${ERR}DISABLED"
 	fi
@@ -1130,8 +1426,8 @@ MainMenu(){
 	printf "r.    Show a report of the most recent check\\n\\n"
 	printf "d.    Toggle emails for daily summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
 	printf "e.    Toggle emails for error reporting\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
-	printf "v.    Edit mtdmon config\\n\\n"
-	printf "s.    Toggle storage location for stats and config\\n      Current location is ${SETTING}%s${CLEARFORMAT} \\n\\n" "$(ScriptStorageLocation check)"
+	printf "v.    Edit mtdmon conf\\n\\n"
+	printf "s.    Toggle storage location for stats and conf\\n      Current location is ${SETTING}%s${CLEARFORMAT} \\n\\n" "$(ScriptStorageLocation check)"
 	printf "u.    Check for updates\\n"
 	printf "uf.   Force update %s with latest version\\n\\n" "$SCRIPT_NAME"
 	printf "e.    Exit menu for %s\\n\\n" "$SCRIPT_NAME"
@@ -1498,11 +1794,11 @@ EOF
 }
 ### ###
 
-if [ -f "/opt/share/$SCRIPT_NAME.d/config" ]; then
-	SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/config"
+if [ -f "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" ]; then
+	SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
 	SCRIPT_STORAGE_DIR="/opt/share/$SCRIPT_NAME.d"
 else
-	SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/config"
+	SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
 	SCRIPT_STORAGE_DIR="/jffs/addons/$SCRIPT_NAME.d"
 fi
 
@@ -1541,9 +1837,25 @@ case "$1" in
 		Clear_Lock
 		exit 0
 	;;
-	summary)
+	check)
 		NTP_Ready
-		Entware_Ready
+		Check_Lock
+		mtdmon_check
+		Clear_Lock
+		exit 0
+	;;
+	daily)
+		NTP_Ready
+		Check_Lock
+		mtdmon_daily "daily"
+		Clear_Lock
+		exit 0
+	;;
+	weekly)
+		NTP_Ready
+		Check_Lock
+		mtdmon_daily "weekly"
+		Clear_Lock
 		exit 0
 	;;
 	outputcsv)
@@ -1600,8 +1912,11 @@ case "$1" in
 	;;
 	debug)
 		debug=1
-		ScanBadBlocks
-		ShowBBReport
+		ScriptStorageLocation load
+		SetUpSMS enable
+		SetSMSAddr show
+#		ScanBadBlocks
+#		ShowBBReport
 		debug=0
 
 		exit
