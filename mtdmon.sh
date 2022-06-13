@@ -1590,7 +1590,7 @@ Menu_Uninstall(){
 	sed -i '/mtdmon_version_server/d' "$SETTINGSFILE"
 	
 	rm -f "/jffs/scripts/$SCRIPT_NAME"
-	rm -f "SCRIPT_DIR"
+	rm -rf "SCRIPT_DIR"
 	Clear_Lock
 	Print_Output true "Uninstall completed" "$PASS"
 }
