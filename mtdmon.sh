@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.3.0"
+readonly SCRIPT_VERSION="v0.4.0"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -327,7 +327,7 @@ Create_Dirs(){
 		mkdir -p "$SCRIPT_STORAGE_DIR"
 	fi
 	
-	if [ ! -d "$CSV_OUTPUT_DIR" ]; then
+	if [ ! -d "$CSV_OUTPUT_DIR" ]; then ## possibly future feature
 		mkdir -p "$CSV_OUTPUT_DIR"
 	fi
 	
@@ -532,7 +532,7 @@ ScriptStorageLocation(){
 		usb)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
-			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
+#			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
@@ -541,7 +541,7 @@ ScriptStorageLocation(){
 		jffs)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
-			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
+#			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
@@ -560,7 +560,7 @@ ScriptStorageLocation(){
 			fi
 			TO_SMS=$(grep "TO_SMS" "$SCRIPT_CONF" | cut -f2 -d"=")
 			SENDSMS=$(grep "SENDSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
-			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
+#			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
 			MTDMON_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/mtdmon.txt"
 		;;
 	esac
@@ -570,11 +570,11 @@ OutputTimeMode(){
 	case "$1" in
 		unix)
 			sed -i 's/^OUTPUTTIMEMODE.*$/OUTPUTTIMEMODE=unix/' "$SCRIPT_CONF"
-			Generate_CSVs
+#			Generate_CSVs
 		;;
 		non-unix)
 			sed -i 's/^OUTPUTTIMEMODE.*$/OUTPUTTIMEMODE=non-unix/' "$SCRIPT_CONF"
-			Generate_CSVs
+#			Generate_CSVs
 		;;
 		check)
 			OUTPUTTIMEMODE=$(grep "OUTPUTTIMEMODE" "$SCRIPT_CONF" | cut -f2 -d"=")
@@ -927,7 +927,7 @@ SetUpSMS(){
 				printf "${BOLD}It can also send a daily text as well as an error.${CLEARFORMAT}\\n"
 				printf "\\nTo send a text message via email, you must use a SMS or MMS to email gateway (email address).\\n"
 				printf "Just substitute your 10-digit cell phone number followed by the SMS gateway of your mobile provider\\n"
-				printf "\\n For example, if your US mobile number is (123) 456-7890 and your mobile provider is Verizon:\\n"
+				printf "\\n For example, if your US mobile number is (123) 456-7890 and your mobile provider is Verizon\\n"
 				printf "\\n the address would be:   1234567890@vtext.com\\n"
 				printf "\\n${BOLD}For a list of mobile carrier SMS gateways, check:\\n     https://avtech.com/articles/138/list-of-email-to-sms-addresses/ .${CLEARFORMAT}\\n\\n"
 				if [ $TO_SMS = "none" ]; then
@@ -1046,40 +1046,45 @@ sed -i "s/$jffsmt/jffs/g" $MTDEVPART
 
 }
 
-DoUserList() {
 
-	Set_Edit
-
+SetMTDs() {
+	
 	rm -f $MTDMONLIST
-
-	cp $MTDEVPART $MTDMONLIST
-	$texteditor $MTDMONLIST
-
-}
-
-DoRecommendedMtdDevs() {
-
-	rm -f $MTDMONLIST
-
 	if [ ! -f $MTDEVPART ];
 	then
 		GetMTDDevs
 	fi
+	cp $MTDEVPART $MTDMONLIST
+	
+	case $1 in
+		all)
+			break
+		;;
+		user)
+			Set_Edit
+			$texteditor $MTDMONLIST
+			break
+		;;
+		recommended)
+			rm -f $MTDMONLIST
+			if [ $ISHND == 1 ];
+			then
+				validmtds="rootfs data nvram image bootfs jffs misc1 misc2 misc3"
+			else
+				validmtds="brcmnand asus jffs"
+			fi
 
-	if [ $ISHND == 1 ];
-	then
-		validmtds="rootfs data nvram image bootfs jffs misc1 misc2 misc3"
-	else
-		validmtds="brcmnand asus jffs"
-	fi
+			for i in $validmtds
+			do
+				grep -w $i $MTDEVPART | awk  '{ print $1, $2 }' >> $MTDMONLIST
+			done
+			break
+		;;
+	esac
 
-	for i in $validmtds
-	do
-		grep -w $i $MTDEVPART | awk  '{ print $1, $2 }' >> $MTDMONLIST
-	done
 }
 
-
+	
 SetMTDList() {
 
 	GetMTDDevs
@@ -1088,13 +1093,14 @@ SetMTDList() {
 
 	printf "\\nMtdmon can monitor most all mtd devices or a user defined list\\n"
 	printf "There are some mtd devices mtdmon can't check (using check_mtd) such as UBI formatted devices.\\n"
-	printf "It is recommended to monitor most devices/partitons such as nvram, bootfs, asus and image partitions (devices)\\n"
-	printf "\\n${BOLD}    Not all routers have all of these partitions!${CLEARFORMAT}\\n\\n"
+	printf "It is recommended at a minimum to monitor most devices/partitons such as nvram, bootfs, asus and image partitions (devices)\\n"
+	printf "\\n${BOLD}    Not all routers have all of these devices/partitions!${CLEARFORMAT}\\n\\n"
 	printf "Mtdmon will automatically select the recommended devices when installed or from menu option 1 in the next menu. \\n\\n"
+	printf "Having mtdmon monitor all testable devices is fine but takes a little longer and longer reports.\\n"
 	PressEnter
-	printf "The list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
+	printf "\\nThe list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
 	cat $MTDEVPART
-	printf "\\n\\nmtdmon is presently monitoring:\\n"
+	printf "\\n\\nmtdmon is presently monitoring:\\n\\n"
 	cat $MTDMONLIST
 	printf "\\n\\nChoose:\\n"
 	printf "1.     Do recommended mtd devices\\n"
@@ -1107,15 +1113,16 @@ SetMTDList() {
 		read -r mtdlist
 		case "$mtdlist" in
 			1)
-				DoRecommendedMtdDevs
+				SetMTDs recommended
 				break
 			;;
 			2)
-				GetMTDDevs
+#				GetMTDDevs
+				SetMTDs all
 				break
 			;;
 			3)
-				DoUserList
+				SetMTDs user
 				break
 			
 			;;
@@ -1338,7 +1345,7 @@ MainMenu(){
 	fi
 
 	if  [ "$SENDSMS" = "no" ]; then
-		DOSMS="${ERR}DISABLED"
+		DOSMS="${PASS}DISABLED"
 	else
 		DOSMS="${PASS}ENABLED"
 	fi
@@ -1352,7 +1359,8 @@ MainMenu(){
 	printf "r.    Show a report of the most recent check\\n\\n"
 	printf "d.    Enable/disable emails for daily or weekly summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
 	printf "e.    Toggle emails for error reporting\\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
-	printf "t.    Toggle SMS via email\\n      Currently: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
+	printf "sm.   Setup/Change SMS settings\\n\\n"
+	printf "m.    Toggle SMS via email\\n      Currently: ${BOLD}$SENDSMS${CLEARFORMAT}\\n\\n"
 	printf "v.    Edit mtdmon conf\\n\\n"
 	printf "s.    Toggle storage location for stats and conf\\n      Current location is ${SETTING}%s${CLEARFORMAT} \\n\\n" "$(ScriptStorageLocation check)"
 	printf "u.    Check for updates\\n"
@@ -1421,6 +1429,22 @@ MainMenu(){
 					OutputTimeMode non-unix
 				elif [ "$(OutputTimeMode check)" = "non-unix" ]; then
 					OutputTimeMode unix
+				fi
+				break
+			;;
+			sm)
+				printf "\\n"
+				SetUpSMS enable
+				break
+			;;
+			m)
+				printf "\\n"
+				if [ "$SENDSMS" = "no" ]; then
+					SENDSMS=yes
+					sed -i 's/^SENDSMS.*$/SENDSMS=yes/' "$SCRIPT_CONF"
+				elif [ "$SENDSMS" = "yes" ]; then
+					SENDSMS=no
+					sed -i 's/^SENDSMS.*$/SENDSMS=no/' "$SCRIPT_CONF"
 				fi
 				break
 			;;
@@ -1530,7 +1554,7 @@ Menu_Install(){
 	Auto_Cron create 2>/dev/null
 #	Auto_ServiceEvent create 2>/dev/null
 	Shortcut_Script create
-	DoRecommendedMtdDevs
+	SetMTDs recommended
 	CreateMTDLog
 	Clear_Lock
 	ScriptHeader
@@ -1705,9 +1729,9 @@ Available commands:
   $SCRIPT_NAME forceupdate        updates to latest version (force update)
   $SCRIPT_NAME install            installs script
   $SCRIPT_NAME uninstall          uninstalls script
-  $SCRIPT_NAME generate           get latest data from mtdmon and mtd_check. also runs outputcsv
-  $SCRIPT_NAME summary            get daily summary data from mtdmon. runs automatically at end of day. also runs outputcsv
-  $SCRIPT_NAME outputcsv          create CSVs from data
+  $SCRIPT_NAME generate           get latest data from mtdmon and mtd_check. 
+  $SCRIPT_NAME summary            get daily summary data from mtdmon. runs automatically at end of day.
+  $SCRIPT_NAME outputcsv          create CSVs from data (not enabled, future feature)
   $SCRIPT_NAME develop            switch to development branch
   $SCRIPT_NAME stable             switch to stable branch
 EOF
@@ -1800,8 +1824,6 @@ case "$1" in
 		Create_Dirs
 		Conf_Exists
 		ScriptStorageLocation load
-#		Create_Symlinks
-#		Auto_Startup create 2>/dev/null
 		Auto_Cron create 2>/dev/null
 		Shortcut_Script create
 		Generate_CSVs
@@ -1835,7 +1857,7 @@ case "$1" in
 		Update_Version force
 		exit 0
 	;;
-	debug)
+	debug)   ## for dev testing. I would not recommend running ;-)
 		debug=1
 		ScriptStorageLocation load
 		SetUpSMS enable
