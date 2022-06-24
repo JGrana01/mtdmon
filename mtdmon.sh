@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.0"
+readonly SCRIPT_VERSION="v0.6.1"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -543,22 +543,31 @@ Check_Requirements(){
 }
 
 ScriptStorageLocation(){
+
+	MTDFILELIST="mtddevs mtdlog mtdmonlist mtdreport mtdweekly lastresult"
+
 	case "$1" in
 		usb)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
-#			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
+			for i in $MTDFILELIST
+			do
+				mv "/jffs/addons/$SCRIPT_NAME.d/$i" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
+			done
 			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
 		jffs)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
-#			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
+			for i in $MTDFILELIST
+			do
+				mv "/opt/share/$SCRIPT_NAME.d/$i" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
+			done
 			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
