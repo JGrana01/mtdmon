@@ -7,7 +7,7 @@ It can optionally email when new errors are detected
 
 Using your preferred SSH client/terminal, copy and paste the following command, then press Enter:
 
-/usr/sbin/curl --retry 3 "https://raw.githubusercontent.com/JGrana01/mtdmon/master/mtdmon.sh" -o "/jffs/scripts/mtdmon" && chmod 0755 /jffs/scripts/mtdmon && /jffs/scripts/mtdmon install
+/usr/sbin/curl --retry 3 "https://raw.githubusercontent.com/JGrana01/mtdmon/main/mtdmon.sh" -o "/jffs/scripts/mtdmon" && chmod 0755 /jffs/scripts/mtdmon && /jffs/scripts/mtdmon install
 
 mtdmon will make sure you have Entware installed and that your kernel is an armv7l or aarch64 version. If not, it will not install the appropriate binary (in /opt/bin) and exit.
 The mtdmon script will stay in /jffs/scripts (it's small) and can be used to re-install/update the mtdmon addon and mtd_check binary.
