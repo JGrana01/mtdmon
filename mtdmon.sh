@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.1"
+readonly SCRIPT_VERSION="v0.6.0"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -178,7 +178,7 @@ Set_Version_Custom_Settings(){
 Update_Check(){
 	doupdate="false"
 	localver=$(grep "SCRIPT_VERSION=" "/jffs/scripts/$SCRIPT_NAME" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
-	/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep -qF "de-vnull" || { Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
+	/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep -qF "JGrana01" || { Print_Output true "404 error detected - stopping update" "$ERR"; return 1; }
 	serverver=$(/usr/sbin/curl -fsL --retry 3 "$SCRIPT_REPO/$SCRIPT_NAME.sh" | grep "SCRIPT_VERSION=" | grep -m1 -oE 'v[0-9]{1,2}([.][0-9]{1,2})([.][0-9]{1,2})')
 	if [ "$localver" != "$serverver" ]; then
 		doupdate="version"
@@ -543,31 +543,22 @@ Check_Requirements(){
 }
 
 ScriptStorageLocation(){
-
-	MTDFILELIST="mtddevs mtdlog mtdmonlist mtdreport mtdweekly lastresult"
-
 	case "$1" in
 		usb)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
+#			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			for i in $MTDFILELIST
-			do
-				mv "/jffs/addons/$SCRIPT_NAME.d/$i" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
-			done
 			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
 		jffs)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
+#			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			for i in $MTDFILELIST
-			do
-				mv "/opt/share/$SCRIPT_NAME.d/$i" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
-			done
 			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
 			ScriptStorageLocation load
 		;;
@@ -1215,7 +1206,6 @@ CheckMTDList() {
 			printf "${BOLD}$mtdev "
 			printf "`grep -w $mtdev $MTDMONLIST | awk '{print $2}'`${CLEARFORMAT}\\n"
         		$MTD_CHECK_COMMAND $cflags /dev/$mtdev
-#			printf "\\n"
 		done
 	
 }
@@ -1236,7 +1226,7 @@ ShowBBReport(){
 
 	repdate=$(date +"%H.%M on %F")
 	printf "\\nMtdmon Report $repdate\\n"
-	printf "\\n\\nmtd dev\t   # Bad Blocks\t\t# Corr ECC\t# Uncorrectable ECC\\n"
+	printf "\\n\\nmtd    mount\t     # Bad Blocks\t\t# Corr ECC\t# Uncorrectable ECC\\n"
 	printf "-----------------------------------------------------------------\n"
         while IFS=  read -r line
         do
@@ -1467,7 +1457,7 @@ ScriptHeader(){
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##             %s on %-11s            ##${CLEARFORMAT}\\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                              ## ${CLEARFORMAT}\\n"
-	printf "${BOLD}## https://github.com/JGrana01/mtdmonn          ##${CLEARFORMAT}\\n"
+	printf "${BOLD}## https://github.com/JGrana01/mtdmon           ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##################################################${CLEARFORMAT}\\n"
 	printf "\\n"
@@ -1657,7 +1647,7 @@ MainMenu(){
 				break
 			;;
 			dd)
-				ReadCheckMTD /dev/mtd0 verbose
+				Update_Check
 				PressEnter
 				break
 			;;
