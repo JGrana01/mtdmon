@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.2"
+readonly SCRIPT_VERSION="v0.6.3"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1407,9 +1407,12 @@ PrintLastResults(){
 		else
 				printf "${PASS}   $lastresult${CLEARFORMAT}"
 		fi
+		PrintErrors       # print detail if available
+		printf "\\n"
+	else
+		printf "No results yet, run menu item 1 - Check mtd for Bad Blocks and ECC now\\n"
 	fi
-	PrintErrors       # print detail if available
-	printf "\\n"
+	
 }
 PrintErrors(){
 	if [ -f "$MTDERRORS" ]; then
@@ -1457,7 +1460,7 @@ ScriptHeader(){
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##             %s on %-11s            ##${CLEARFORMAT}\\n" "$SCRIPT_VERSION" "$ROUTER_MODEL"
 	printf "${BOLD}##                                              ## ${CLEARFORMAT}\\n"
-	printf "${BOLD}## https://github.com/JGrana01/mtdmon           ##${CLEARFORMAT}\\n"
+	printf "${BOLD}##      https://github.com/JGrana01/mtdmon      ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##                                              ##${CLEARFORMAT}\\n"
 	printf "${BOLD}##################################################${CLEARFORMAT}\\n"
 	printf "\\n"
