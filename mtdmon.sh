@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.5.0"
+readonly SCRIPT_VERSION="v0.6.0"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1072,7 +1072,7 @@ while IFS=  read -r line
 #
 # now, make sure they contain a valid nand that supports Bad Blocks and ECC
 #
-	if `$MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null`
+	if `$MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null 2>&1`
 	then
 		echo "$mtdevice $mtpoint" >> $MTDEVPART
 	fi
@@ -1193,7 +1193,7 @@ SetMTDList() {
 
 CheckMTDList() {
 
-	printf "Checking:\\n\\n "
+	printf "Checking:\\n\\n"
 
        	if [ "$1" = "Verbose" ]; then
                 cflags=""
@@ -1203,8 +1203,10 @@ CheckMTDList() {
 
 	for mtdev in `cat $MTDMONLIST | awk '{ print $1}'`
 		do
-			printf "${BOLD}$mtdev:${CLEARFORMAT}\\n"
+			printf "${BOLD}$mtdev "
+			printf "`grep -w $mtdev $MTDMONLIST | awk '{print $2}'`${CLEARFORMAT}\\n"
         		$MTD_CHECK_COMMAND $cflags /dev/$mtdev
+#			printf "\\n"
 		done
 	
 }
@@ -1215,6 +1217,7 @@ CreateMTDLog(){
 	for i in `cat $MTDMONLIST | awk '{print $1}'`
 	do
         	printf "$i   " >> $MTDLOG
+		printf "`grep -w $i $MTDMONLIST | awk '{print $2}'`   " >> $MTDLOG
         	printf "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
         	printf "  `date +"%m-%d-%Y-%h-%m" `\\n" >> $MTDLOG
 	done
@@ -1229,10 +1232,11 @@ ShowBBReport(){
         while IFS=  read -r line
         do
                 mtdevice="$(echo $line | cut -d' ' -f1)"
-                numbbs="$(echo $line | cut -d' ' -f2)"
-                numcorr="$(echo $line | cut -d' ' -f3)"
-                numuncorr="$(echo $line | cut -d' ' -f4)"
-		printf " $mtdevice\t\t$numbbs\t\t  $numcorr\t\t  $numuncorr\\n" 
+                mtmnt="$(echo $line | cut -d' ' -f2)"
+                numbbs="$(echo $line | cut -d' ' -f3)"
+                numcorr="$(echo $line | cut -d' ' -f4)"
+                numuncorr="$(echo $line | cut -d' ' -f5)"
+		printf " $mtdevice\\t$mtmnt\\t\\t$numbbs\\t\\t  $numcorr\t\t  $numuncorr\\n" 
         done < $MTDLOG
 }
 
@@ -1255,17 +1259,24 @@ ReadCheckMTD(){
 
 # read all of mtd device using block size and count
 # if the # blocks read != # blocks on device return error
-# $1 = mtd device $2 = "silent" if no printing on error
+# $1 = mtd device $2 = "silent" if no printing
 
 bsize=`$MTD_CHECK_COMMAND -i $1 | grep -w Block | awk '{ print $3 }'`
 bcount=`$MTD_CHECK_COMMAND -i $1 | grep -w blocks | awk '{ print $5 }'`
 
 # read blocks
+
+if [ ! $2 = "silent" ]; then
+	printf "Read Check $1"
+fi
+
 /bin/dd if=$1 of=/dev/null bs=$bsize count=$bcount > /tmp/mtddd 2>&1
 
 readbs=`head -1 /tmp/mtddd | awk '{ print $1 }'`
 
-printf "Readbs: "$readbs" Bcount: "$bcount+0" \\n"
+if [ debug = 1 ]; then
+	printf "Blocks Read: "$readbs" Blocks Expected: "$bcount+0" \\n"
+fi
 
 if [ ! "$readbs" = "$bcount+0" ]; then
 	if [ ! $2 = "silent" ]; then
@@ -1273,6 +1284,9 @@ if [ ! "$readbs" = "$bcount+0" ]; then
 		printf "Expected  $bcount+0    Got  $readbs\\n"
 	fi
 	return 1
+fi
+if [ ! $2 = "silent" ]; then
+	printf " ok\\n"
 fi
 return 0
 }
@@ -1288,8 +1302,12 @@ ScanBadBlocks(){
 	newuncor=0
 	newebb=0
 	readchk=0
+	rsilent=0
 
-	if [ ! -z "$1" ]; then
+	if [ "$1" = "readchks" ]; then
+		readchk=1
+		rsilent=1
+	elif [ "$1" = readchk ]; then
 		readchk=1
 	fi
 
@@ -1302,13 +1320,16 @@ ScanBadBlocks(){
         while IFS='' read -r line
         do
                 mtdevice="$(echo $line | cut -d' ' -f1)"
-                numbbs="$(echo $line | cut -d' ' -f2)"
-                numcorr="$(echo $line | cut -d' ' -f3)"
-                numuncorr="$(echo $line | cut -d' ' -f4)"
-                bbsdate="$(echo $line | cut -d' ' -f5)"
+                mtmnt="$(echo $line | cut -d' ' -f2)"
+                numbbs="$(echo $line | cut -d' ' -f3)"
+                numcorr="$(echo $line | cut -d' ' -f4)"
+                numuncorr="$(echo $line | cut -d' ' -f5)"
+                bbsdate="$(echo $line | cut -d' ' -f6)"
 
-		if [ $readchk = 1 ]; then
+		if [ $readchk = 1 ] && [ $rsilent = 1 ]; then
 			ReadCheckMTD /dev/$mtdevice silent
+		elif [ $readchk = 1 ] && [ $rsilent = 0 ]; then
+			ReadCheckMTD /dev/$mtdevice verbose
 		fi
 
                 latestinfo="$($MTD_CHECK_COMMAND -z /dev/$mtdevice)"    # check mtd device
@@ -1322,17 +1343,17 @@ ScanBadBlocks(){
 		Debug_Output false "info prev: bb -- $numbbs  corr $numcorr uncor $numuncorr\\n"
 
                 if [ "$latestbbs" -gt "$numbbs" ]; then
-			printf "New Bad Block(s) detected on $mtdevice. Previous number: $numbbs, new number: $latestbbs\\n" >> $MTDERRORS
+			printf "New Bad Block(s) detected on $mtdevice  $mtmnt. Previous number: $numbbs, new number: $latestbbs\\n" >> $MTDERRORS
 			founderror=1
 			newbb=$((newbb+1))
 		fi
                 if [ "$latestcorr" -gt "$numcorr" ]; then
-			printf "New Correctable ECC Error(s) detected on $mtdevice. Previous number: $numcorr, new number: $latestcorr\\n" >> $MTDERRORS
+			printf "New Correctable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numcorr, new number: $latestcorr\\n" >> $MTDERRORS
 			founderror=1
 			newecc=$((newecc+1))
 		fi
                 if [ "$latestuncorr" -gt "$numuncorr" ]; then
-			printf "New Uncorrectable ECC Error(s) detected on $mtdevice. Previous number: $numuncorr, new number: $latestuncorr\\n" >> $MTDERRORS		founderror=1
+			printf "New Uncorrectable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numuncorr, new number: $latestuncorr\\n" >> $MTDERRORS		founderror=1
 			newuncor=$((newuncor+1))
 		fi
          done < $MTDLOG.old
@@ -1359,7 +1380,7 @@ ScanBadBlocks(){
 mtdmon_check(){
 
 	founderror=0
-	ScanBadBlocks
+	ScanBadBlocks noread
 	if [ $founderror = 1 ]; then
 		Generate_Email error
 		Generate_Message error
@@ -1479,7 +1500,7 @@ MainMenu(){
 			1)
 				printf "\\n"
 				if Check_Lock menu; then
-					ScanBadBlocks
+					ScanBadBlocks noread
 					CheckMTDList Info
 					Clear_Lock
 				fi
@@ -1621,7 +1642,8 @@ MainMenu(){
 				break
 			;;
 			scan)
-				ScanBadBlocks
+				CreateMTDLog
+#				ScanBadBlocks readchks
 				PressEnter
 				break
 			;;
