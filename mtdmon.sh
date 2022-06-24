@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.0"
+readonly SCRIPT_VERSION="v0.6.2"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
