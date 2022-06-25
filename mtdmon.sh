@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.7"
+readonly SCRIPT_VERSION="v0.6.8"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -852,18 +852,18 @@ Encode_Text(){
 
 DailyEmail(){
 
-	if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
-		. /jffs/addons/amtm/mail/email.conf
-		PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
-	else
-		Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
-		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
-		sleep 5
-		return 1
-	fi
 	case "$1" in
 		enable)
 			if [ -z "$2" ]; then
+				if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
+					. /jffs/addons/amtm/mail/email.conf
+					PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
+				else
+					Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
+					Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+					PressReturn
+					return 1
+				fi
 				ScriptHeader
 				exitmenu="false"
 				GetEmailOption
