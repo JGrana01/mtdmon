@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.4"
+readonly SCRIPT_VERSION="v0.6.6"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -744,6 +744,7 @@ Generate_Message(){
 	else
 		Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
 		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+		PressReturn
 		return 1
 	fi
 	
@@ -929,6 +930,17 @@ DailyEmail(){
 
 
 SetSMSAddr(){
+
+	if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
+		. /jffs/addons/amtm/mail/email.conf
+		PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
+	else
+		Print_Output true "$SCRIPT_NAME relies on amtm to send sms as an email and email settings have not been configured" "$ERR"
+		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+		PressEnter
+		return 1
+	fi
+
 	case "$1" in
 		set)
 			printf "\\nPlease enter your SMS email address in the form:\\n\\n"
@@ -944,8 +956,11 @@ SetSMSAddr(){
 				TO_SMS=$inadd
 			else
 				printf "\\nThe length of $inadd seems too small\\n"
-				sleep 3
-				exit
+				printf "Are you sure $inadd is correct? (y/n) "
+				read ansr
+				if [ ! "$ansr" = "y" ]; then
+					return 1
+				fi
 			fi
 				
 			sed -i 's/^TO_SMS.*$/TO_SMS='"$TO_SMS"'/' "$SCRIPT_CONF"
@@ -962,6 +977,17 @@ SetSMSAddr(){
 
 
 SetUpSMS(){
+
+	if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
+		. /jffs/addons/amtm/mail/email.conf
+		PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
+	else
+		Print_Output true "$SCRIPT_NAME relies on amtm to send sms as an email and email settings have not been configured" "$ERR"
+		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+		PressEnter
+		return 1
+	fi
+
 	case "$1" in
 		enable)
 			if [ -z "$2" ]; then
