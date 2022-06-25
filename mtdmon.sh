@@ -851,6 +851,16 @@ Encode_Text(){
 }
 
 DailyEmail(){
+
+	if [ -f /jffs/addons/amtm/mail/email.conf ] && [ -f /jffs/addons/amtm/mail/emailpw.enc ]; then
+		. /jffs/addons/amtm/mail/email.conf
+		PWENCFILE=/jffs/addons/amtm/mail/emailpw.enc
+	else
+		Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
+		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
+		sleep 5
+		return 1
+	fi
 	case "$1" in
 		enable)
 			if [ -z "$2" ]; then
