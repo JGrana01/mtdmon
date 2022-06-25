@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.8"
+readonly SCRIPT_VERSION="v0.6.9"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -356,7 +356,7 @@ Conf_Exists(){
 		fi
 		return 0
 	else
-		{ echo "DAILYEMAIL=none"; echo "ERROREMAIL=yes";  echo "EMAILTYPE=text"; echo "SENDSMS=no";  echo "TO_SMS=none"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
+		{ echo "DAILYEMAIL=none"; echo "ERROREMAIL=no";  echo "EMAILTYPE=text"; echo "SENDSMS=no";  echo "TO_SMS=none"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
 		return 1
 	fi
 }
@@ -744,7 +744,7 @@ Generate_Message(){
 	else
 		Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
 		Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
-		PressReturn
+		PressEnter
 		return 1
 	fi
 	
@@ -861,7 +861,7 @@ DailyEmail(){
 				else
 					Print_Output true "$SCRIPT_NAME relies on amtm to send email summaries and email settings have not been configured" "$ERR"
 					Print_Output true "Navigate to amtm > em (email settings) to set them up" "$ERR"
-					PressReturn
+					PressEnter
 					return 1
 				fi
 				ScriptHeader
@@ -1294,15 +1294,15 @@ ReadCheckMTD(){
 
 # read all of mtd device using block size and count
 # if the # blocks read != # blocks on device return error
-# $1 = mtd device $2 = "silent" if no printing
+# $1 = mtd device $2 = mount point $3 = "silent" if no printing
 
 bsize=`$MTD_CHECK_COMMAND -i $1 | grep -w Block | awk '{ print $3 }'`
 bcount=`$MTD_CHECK_COMMAND -i $1 | grep -w blocks | awk '{ print $5 }'`
 
 # read blocks
 
-if [ ! $2 = "silent" ]; then
-	printf "Read Check $1"
+if [ ! $3 = "silent" ]; then
+	printf "Read Check $1 ($2) "
 fi
 
 /bin/dd if=$1 of=/dev/null bs=$bsize count=$bcount > /tmp/mtddd 2>&1
@@ -1314,13 +1314,13 @@ if [ debug = 1 ]; then
 fi
 
 if [ ! "$readbs" = "$bcount+0" ]; then
-	if [ ! $2 = "silent" ]; then
+	if [ ! $3 = "silent" ]; then
 		printf "Did not read all blocks\\n"
 		printf "Expected  $bcount+0    Got  $readbs\\n"
 	fi
 	return 1
 fi
-if [ ! $2 = "silent" ]; then
+if [ ! $3 = "silent" ]; then
 	printf " ok\\n"
 fi
 return 0
@@ -1362,9 +1362,9 @@ ScanBadBlocks(){
                 bbsdate="$(echo $line | cut -d' ' -f6)"
 
 		if [ $readchk = 1 ] && [ $rsilent = 1 ]; then
-			ReadCheckMTD /dev/$mtdevice silent
+			ReadCheckMTD /dev/$mtdevice $mtmnt silent
 		elif [ $readchk = 1 ] && [ $rsilent = 0 ]; then
-			ReadCheckMTD /dev/$mtdevice verbose
+			ReadCheckMTD /dev/$mtdevice $mtmnt verbose
 		fi
 
                 latestinfo="$($MTD_CHECK_COMMAND -z /dev/$mtdevice)"    # check mtd device
@@ -1415,7 +1415,7 @@ ScanBadBlocks(){
 mtdmon_check(){
 
 	founderror=0
-	ScanBadBlocks noread
+	ScanBadBlocks readchks
 	if [ $founderror = 1 ]; then
 		Generate_Email error
 		Generate_Message error
@@ -1439,9 +1439,9 @@ PrintLastResults(){
 	if [ -f "$LASTRESULTS" ]; then
 		lastresult=`cat $LASTRESULTS`
 		if [ $(grep -c "Error" $LASTRESULTS) -ne 0 ]; then
-				printf "${ERR}    $lastresult${CLEARFORMAT}"
+				printf "${ERR}${BOLD}    $lastresult${CLEARFORMAT}"
 		else
-				printf "${PASS}   $lastresult${CLEARFORMAT}"
+				printf "${PASS}${BOLD}   $lastresult${CLEARFORMAT}"
 		fi
 		PrintErrors       # print detail if available
 		printf "\\n"
@@ -1477,7 +1477,7 @@ GetEmailOption(){
 GetSMSOption(){
 
 	if  [ "$SENDSMS" = "no" ]; then
-		DOSMS="${PASS}DISABLED"
+		DOSMS="${ERR}DISABLED"
 	elif [ "$SENDSMS" = "yes" ]; then
 		DOSMS="${PASS}ENABLED for Errors"
 	else
