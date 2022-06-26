@@ -1770,7 +1770,8 @@ Menu_Install(){
 	Print_Output false "Setting recommended mtd devices and doing initial scan..."
 	SetMTDs recommended
 	CreateMTDLog
-	Print_Output false "Done. You can see the initial scan results by selecting "r" on the main menu"
+	Print_Output false "Done. Initial scan (baseline):\\n"
+	ShowBBReport
 	PressEnter
 	Clear_Lock
 	ScriptHeader
