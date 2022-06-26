@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.9"
+readonly SCRIPT_VERSION="v0.6.10"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -55,6 +55,7 @@ MTDREPORT="$SCRIPT_DIR/mtdreport"
 MTDERRORS="$SCRIPT_DIR/mtderrors"
 MTDERRLOG="$SCRIPT_DIR/mtderrorlog"
 MTDWEEKLY="$SCRIPT_DIR/mtdweekly"
+MTDWEEKREPORT="$SCRIPT_DIR/mtdweekreport"
 LASTRESULTS="$SCRIPT_DIR/lastresult"
 PREVIOUSERRORS="$SCRIPT_DIR/previouserrors"
 debug=0
@@ -676,7 +677,7 @@ Generate_Email(){
 					cat $MTDERRORS >> /tmp/mail.txt
 				fi
 			else
-				cat "$MTDWEEKLY" >>/tmp/mail.txt
+				cat "$MTDWEEKREPORT" >>/tmp/mail.txt
 				if [ -f "$MTDERRORS" ]; then
 					cat $MTDERRORS >> /tmp/mail.txt
 				fi
@@ -1262,8 +1263,10 @@ ShowBBReport(){
 
 	repdate=$(date +"%H.%M on %F")
 	printf "\\nMtdmon Report $repdate\\n"
-	printf "\\n\\nmtd    mount\t     # Bad Blocks\t\t# Corr ECC\t# Uncorrectable ECC\\n"
-	printf "-----------------------------------------------------------------\n"
+	fmt1="%-12s%-16s%-16s%-16s%-16s\\n"
+	fmt2="%-12s%-20s%-18s%-18s%-18s\\n"
+	printf "$fmt1" "mtd" "mount" "Bad Blocks" "Corr ECC" "Uncorrectable ECC"
+	printf "-----------------------------------------------------------------------------\n"
         while IFS=  read -r line
         do
                 mtdevice="$(echo $line | cut -d' ' -f1)"
@@ -1271,7 +1274,7 @@ ShowBBReport(){
                 numbbs="$(echo $line | cut -d' ' -f3)"
                 numcorr="$(echo $line | cut -d' ' -f4)"
                 numuncorr="$(echo $line | cut -d' ' -f5)"
-		printf " $mtdevice\\t$mtmnt\\t\\t$numbbs\\t\\t  $numcorr\t\t  $numuncorr\\n" 
+		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$numcorr" "$numuncorr"
         done < $MTDLOG
 }
 
@@ -1407,9 +1410,8 @@ ScanBadBlocks(){
 			printf "\\nReported Errors:\\n" >> $MTDREPORT
 			cat $MTDERRORS >> $MTDREPORT   #  add detail to report
 		fi
-		cat $MTDREPORT >> $MTDWEEKLY # save info to end of weekly report
+		tail -4 $MTDREPORT >> $MTDWEEKLY # save info to end of weekly report
 		printf "\\n" >> $MTDREPORT
-		printf "\\n" >> $MTDWEEKLY
 }
 
 mtdmon_check(){
@@ -1428,8 +1430,14 @@ mtdmon_daily(){
 		Generate_Email daily
 		Generate_Message daily
 	else
+		printf "mtdmon Weekly Report\\n\\n" > $MTDWEEKREPORT
+		printf "Monitoring:\\n" >> $MTDWEEKREPORT
+		cat mtdmonlist >> $MTDWEEKREPORT
+		printf "\\n\\n" >> $MTDWEEKREPORT
+		cat $MTDWEEKLY >> $MTDWEEKREPORT
 		Generate_Email weekly
-		mv $MTDWEEKLY $MTDWEEKLY.lastweek
+		mv $MTDWEEKREPORT $MTDWEEKREPORT.lastweek
+		rm -f $MTDWEEKLY   # start a new week
 	fi
 }
 
