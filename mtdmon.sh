@@ -1264,7 +1264,6 @@ ShowBBReport(){
 
 	if [ ! -f $MTDRLOG ]; then
 		printf "\\nmtdmon scan not yet run, nothing to report\\nRun a scan by selecting 1 from the Main Menu\\n"
-		PressEnter
 		return 1
 	fi
 	repdate=$(date +"%H.%M on %F")
@@ -1487,7 +1486,7 @@ PrintLastResults(){
 		PrintErrors       # print detail if available
 		printf "\\n"
 	else
-		printf "\\nNo results yet, run menu item 1 - Check mtd for Bad Blocks and ECC now\\n"
+		printf "\\nNo results yet, run menu item 1 - Check mtd for Bad Blocks and ECC now\\n\\n"
 	fi
 	
 }
