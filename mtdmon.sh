@@ -43,8 +43,8 @@ readonly SHARED_DIR="/jffs/addons/shared-jy"
 # the above are not used - saved for potential future usage
 
 
-#readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
-readonly MTD_CHECK_COMMAND="/jffs/scripts/sandbox/mtdmon/mtd_check" # for testing
+readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
+#readonly MTD_CHECK_COMMAND="/jffs/scripts/sandbox/mtdmon/mtd_check" # for testing
 readonly MTDAPP_DIR="/opt/bin"
 
 MTDEVPART="$SCRIPT_DIR/mtddevs"
@@ -1262,6 +1262,11 @@ CreateMTDLog(){
 
 ShowBBReport(){
 
+	if [ ! -f $MTDRLOG ]; then
+		printf "\\nmtdmon scan not yet run, nothing to report\\nRun a scan by selecting 1 from the Main Menu\\n"
+		PressEnter
+		return 1
+	fi
 	repdate=$(date +"%H.%M on %F")
 	printf "\\nMtdmon Report $repdate\\n"
 	fmt1="%-10s%-12s%-12s%-12s%-12s%-14s\\n"
@@ -1338,7 +1343,9 @@ ScanBadBlocks(){
 		dobaseline=1
 	else
 		dobaseline=0
-		cp $MTDLOG $MTDLOG.old    # save old results
+		if [ -f $MTDLOG ]; then		# first scan?
+			cp $MTDLOG $MTDLOG.old    # save old results
+		fi
 	fi
 
 	rm -f $MTDERRORS
