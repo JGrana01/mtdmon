@@ -1373,6 +1373,11 @@ ScanBadBlocks(){
 
 	if [ $dobaseline = 1 ]; then
 		cp $MTDLOG $MTDLOG.baseline    # create baseline from initial run
+		dobaseline=0
+	fi
+
+	if [ ! -f $MTDLOG.old ]; then
+		cp $MTDLOG $MTDLOG.old		# first time running
 	fi
 
         while IFS='' read -r line
@@ -1482,7 +1487,7 @@ PrintLastResults(){
 		PrintErrors       # print detail if available
 		printf "\\n"
 	else
-		printf "No results yet, run menu item 1 - Check mtd for Bad Blocks and ECC now\\n"
+		printf "\\nNo results yet, run menu item 1 - Check mtd for Bad Blocks and ECC now\\n"
 	fi
 	
 }
