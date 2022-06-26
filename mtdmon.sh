@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.10"
+readonly SCRIPT_VERSION="v0.6.10b"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -43,14 +43,15 @@ readonly SHARED_DIR="/jffs/addons/shared-jy"
 # the above are not used - saved for potential future usage
 
 
-readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
-#readonly MTD_CHECK_COMMAND="/jffs/scripts/sandbox/mtdmon/mtd_check" # for testing
+#readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
+readonly MTD_CHECK_COMMAND="/jffs/scripts/sandbox/mtdmon/mtd_check" # for testing
 readonly MTDAPP_DIR="/opt/bin"
 
 MTDEVPART="$SCRIPT_DIR/mtddevs"
 VALIDMTDS="$SCRIPT_DIR/validmtds"
 MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
 MTDLOG="$SCRIPT_DIR/mtdlog"
+MTDRLOG="$SCRIPT_DIR/mtdrlog"
 MTDREPORT="$SCRIPT_DIR/mtdreport"
 MTDERRORS="$SCRIPT_DIR/mtderrors"
 MTDERRLOG="$SCRIPT_DIR/mtderrorlog"
@@ -111,7 +112,7 @@ Firmware_Version_Check(){
 Check_Lock(){
 	if [ -f "/tmp/$SCRIPT_NAME.lock" ]; then
 		ageoflock=$(($(date +%s) - $(date +%s -r /tmp/$SCRIPT_NAME.lock)))
-		if [ "$ageoflock" -gt 600 ]; then
+		if [ "$ageoflock" -gt 60 ]; then
 			Print_Output true "Stale lock file found (>600 seconds old) - purging lock" "$ERR"
 			kill "$(sed -n '1p' /tmp/$SCRIPT_NAME.lock)" >/dev/null 2>&1
 			Clear_Lock
@@ -1263,9 +1264,9 @@ ShowBBReport(){
 
 	repdate=$(date +"%H.%M on %F")
 	printf "\\nMtdmon Report $repdate\\n"
-	fmt1="%-12s%-16s%-16s%-16s%-16s\\n"
-	fmt2="%-12s%-20s%-18s%-18s%-18s\\n"
-	printf "$fmt1" "mtd" "mount" "Bad Blocks" "Corr ECC" "Uncorrectable ECC"
+	fmt1="%-10s%-12s%-12s%-12s%-12s%-14s\\n"
+	fmt2="%-10s%-16s%-10s%-14s%-16s%-16s\\n"
+	printf "$fmt1" "mtd" "mount" "Bad Blocks" "(New)" "Corr ECC" "Uncorrectable ECC"
 	printf "-----------------------------------------------------------------------------\n"
         while IFS=  read -r line
         do
@@ -1274,8 +1275,9 @@ ShowBBReport(){
                 numbbs="$(echo $line | cut -d' ' -f3)"
                 numcorr="$(echo $line | cut -d' ' -f4)"
                 numuncorr="$(echo $line | cut -d' ' -f5)"
-		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$numcorr" "$numuncorr"
-        done < $MTDLOG
+                newbbs="$(echo $line | cut -d' ' -f6)"
+		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$newbbs" "$numcorr" "$numuncorr"
+        done < $MTDRLOG
 }
 
 ShowBBErrorReport(){
@@ -1332,8 +1334,15 @@ return 0
 
 ScanBadBlocks(){
 
-	cp $MTDLOG $MTDLOG.old    # save old results
+	if [ ! -f $MTDLOG.baseline ]; then    # initial run
+		dobaseline=1
+	else
+		dobaseline=0
+		cp $MTDLOG $MTDLOG.old    # save old results
+	fi
+
 	rm -f $MTDERRORS
+	rm -f $MTDRLOG
 	
 	founderror=0
 	newecc=0
@@ -1355,6 +1364,10 @@ ScanBadBlocks(){
 
 	CreateMTDLog  ## create new log
 
+	if [ $dobaseline = 1 ]; then
+		cp $MTDLOG $MTDLOG.baseline    # create baseline from initial run
+	fi
+
         while IFS='' read -r line
         do
                 mtdevice="$(echo $line | cut -d' ' -f1)"
@@ -1363,7 +1376,9 @@ ScanBadBlocks(){
                 numcorr="$(echo $line | cut -d' ' -f4)"
                 numuncorr="$(echo $line | cut -d' ' -f5)"
                 bbsdate="$(echo $line | cut -d' ' -f6)"
+		newnumbb=0
 
+		
 		if [ $readchk = 1 ] && [ $rsilent = 1 ]; then
 			ReadCheckMTD /dev/$mtdevice $mtmnt silent
 		elif [ $readchk = 1 ] && [ $rsilent = 0 ]; then
@@ -1384,6 +1399,8 @@ ScanBadBlocks(){
 			printf "New Bad Block(s) detected on $mtdevice  $mtmnt. Previous number: $numbbs, new number: $latestbbs\\n" >> $MTDERRORS
 			founderror=1
 			newbb=$((newbb+1))
+			origbbs="$(grep $mtdevice $MTDLOG.baseline | cut -d' ' -f1)"
+			newnumbb=$(($latestbbs-$origbbs))
 		fi
                 if [ "$latestcorr" -gt "$numcorr" ]; then
 			printf "New Correctable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numcorr, new number: $latestcorr\\n" >> $MTDERRORS
@@ -1392,8 +1409,12 @@ ScanBadBlocks(){
 		fi
                 if [ "$latestuncorr" -gt "$numuncorr" ]; then
 			printf "New Uncorrectable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numuncorr, new number: $latestuncorr\\n" >> $MTDERRORS		founderror=1
+			founderror=1
 			newuncor=$((newuncor+1))
 		fi
+
+		printf "$mtdevice  $mtmnt  $latestbbs  $latestcorr  $latestuncorr  $newnumbb\\n" >> $MTDRLOG
+
          done < $MTDLOG.old
 		if [ -f "$MTDERRORS" ]; then
 			printf "$newdate - \\n" >> $MTDERRLOG
@@ -1518,7 +1539,6 @@ MainMenu(){
 
 	printf "mtdmon check results -\\n"
 	PrintLastResults
-	PrintErrors
 
 
 	printf "1.    Check mtd for Bad Blocks and ECC now\\n\\n"
@@ -1732,7 +1752,6 @@ Menu_Install(){
 	Set_Version_Custom_Settings server "$SCRIPT_VERSION"
 	ScriptStorageLocation load
 	
-#	Update_File mtdmon
 	Update_File mtd_check
 	
 	Auto_Cron create 2>/dev/null
