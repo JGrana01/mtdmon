@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.7.0d"
+readonly SCRIPT_VERSION="v0.7.0e"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -473,6 +473,8 @@ Auto_Cron(){
 			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
 				cru d "${SCRIPT_NAME}_daily"
 			fi
+		;;
+		deleteweekly)
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_weekly")
 			if [ "$STARTUPLINECOUNT" -gt 0 ]; then
 				cru d "${SCRIPT_NAME}_weekly"
@@ -703,9 +705,11 @@ Generate_Email(){
 			{
 				echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 				echo "To: \"$TO_NAME\" <$TO_ADDRESS>"
-				echo "Subject: $FRIENDLY_ROUTER_NAME - successful mtdmon Email test"
+				echo "Subject: $FRIENDLY_ROUTER_NAME - Successful mtdmon Email test"
 				echo ""
 			} > /tmp/mail.txt
+			echo "" >> /tmp/mail.txt
+			echo "If you can read this email, the mtdmon email test succeeded" >> /tmp/mail.txt
 			echo "" >> /tmp/mail.txt
 	fi
 	
@@ -736,7 +740,7 @@ fi
 
 Generate_Message(){
 
-	if [ "$SENDSMS" = "no" ]; then
+	if [ "$SENDSMS" = "no" ] && [ ! "$1" = "test" ] ; then
 		return 1
 	fi
 
@@ -789,7 +793,7 @@ Generate_Message(){
 		{
 		echo "From: \"$FRIENDLY_ROUTER_NAME\" <$FROM_ADDRESS>"
 		echo "To: \"$TO_NAME\" <$TO_SMS>"
-		echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon successful sms test as of $(date +"%H.%M on %F")"
+		echo "Subject: $FRIENDLY_ROUTER_NAME - mtdmon Successful SMS test as of $(date +"%H.%M on %F")"
 		echo ""
 		} > /tmp/smsmail.txt
 	fi
@@ -807,6 +811,7 @@ if [ $debug = 0 ]; then
 		rm -f /tmp/mail.txt
 fi
 		PASSWORD=""
+		PressEnter
 		return 0
 	else
 		echo ""
@@ -815,6 +820,7 @@ if [ $debug = 0 ]; then
 		rm -f /tmp/mail.txt
 fi
 		PASSWORD=""
+		PressEnter
 		return 1
 	fi
 }
@@ -876,6 +882,7 @@ DailyEmail(){
 				printf "2.    Weekly (and also when an error is detected\\n"
 				printf "3.    Daily (and also when an error is detected\\n"
 				printf "4.    Don't send any emails\\n"
+				printf "5.    Send a Test Email\\n"
 				printf "\\ne.    Exit to main menu\\n"
 				
 				while true; do
@@ -884,21 +891,42 @@ DailyEmail(){
 					case "$emailtype" in
 						1)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=error/' "$SCRIPT_CONF"
+							GetEmailOption
+							printf "The setting is now $MENU_DAILYEMAIL ${CLEARFORMAT}\\n\\n"
+							Auto_Cron deletedaily
+							Auto_Cron deleteweekly
+							sleep 2
 							break
 						;;
 						2)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=weekly/' "$SCRIPT_CONF"
+							Auto_Cron deletedaily
 							Auto_Cron weekly
+							GetEmailOption
+							printf "The setting is now $MENU_DAILYEMAIL ${CLEARFORMAT}\\n\\n"
+							sleep 2
 							break
 						;;
 						3)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=daily/' "$SCRIPT_CONF"
+							Auto_Cron deleteweekly
 							Auto_Cron daily
+							GetEmailOption
+							printf "The setting is now $MENU_DAILYEMAIL ${CLEARFORMAT}\\n\\n"
+							sleep 2
 							break
 						;;
 						4)
 							sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=none/' "$SCRIPT_CONF"
 							Auto_Cron deletedaily
+							Auto_Cron deleteweekly
+							GetEmailOption
+							printf "The setting is now $MENU_DAILYEMAIL ${CLEARFORMAT}\\n\\n"
+							sleep 2
+							break
+						;;
+						5)
+							Generate_Email test
 							break
 						;;
 						e)
@@ -920,10 +948,6 @@ DailyEmail(){
 				sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL='"$2"'/' "$SCRIPT_CONF"
 			fi
 			
-#			Generate_Email daily
-#			if [ $? -eq 1 ]; then
-#				DailyEmail disable
-#			fi
 		;;
 		disable)
 			sed -i 's/^DAILYEMAIL.*$/DAILYEMAIL=none/' "$SCRIPT_CONF"
@@ -981,8 +1005,8 @@ SetSMSAddr(){
 			echo $TO_SMS
 		;;
 		reset)
-				TO_SMS=none
-				sed -i 's/^TO_SMS.*$/TO_SMS=none/' "$SCRIPT_CONF"
+			TO_SMS=none
+			sed -i 's/^TO_SMS.*$/TO_SMS=none/' "$SCRIPT_CONF"
 		;;
 	esac
 }
@@ -1015,19 +1039,13 @@ SetUpSMS(){
 				if [ $TO_SMS = "none" ]; then
 					printf "\\nThere is no address setup. Setup now? (Y/N) "
 					read r
-					case "$r" in
-						y) SetSMSAddr set
-						   break
-						;;
-						Y) SetSMSAddr set
-						   break
-						;;
-						*)
-						   printf "\\nYou will need to setup a valid SMS address\\n"
-						   sleep 3
-						   exit
-						;;
-					esac
+					if [ "$r" = "y" ] || [ "$r" = "Y" ]; then
+						SetSMSAddr set
+					else
+						printf "\\nYou will need to setup a valid SMS address\\n"
+						sleep 3
+						return					
+					fi
 				fi
 				printf "\\nYour present SMS email address is ${BOLD} $TO_SMS ${CLEARFORMAT}\\n"
 				printf "Your present SMS option is ${BOLD} $SENDSMS ${CLEARFORMAT}\\n\\n"
@@ -1045,11 +1063,17 @@ SetUpSMS(){
 						1)
 							sed -i 's/^SENDSMS.*$/SENDSMS=yes/' "$SCRIPT_CONF"
 							SENDSMS=yes
+							GetSMSOption
+							printf "SMS Settings: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
+							sleep 2
 							break
 						;;
 						2)
 							sed -i 's/^SENDSMS.*$/SENDSMS=daily/' "$SCRIPT_CONF"
 							SENDSMS=daily
+							GetSMSOption
+							printf "SMS Settings: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
+							sleep 2
 							break
 						;;
 						3)
@@ -1059,6 +1083,9 @@ SetUpSMS(){
 						4)
 							sed -i 's/^SENDSMS.*$/SENDSMS=no/' "$SCRIPT_CONF"
 							SENDSMS=no
+							GetSMSOption
+							printf "SMS Settings: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
+							sleep 2
 							break
 						;;
 						5)
@@ -1604,7 +1631,8 @@ MainMenu(){
 				printf "\\n"
 				if Check_Lock menu; then
 					ScanBadBlocks noread
-					CheckMTDList Info
+					ShowBBReport
+#					CheckMTDList Info
 					Clear_Lock
 				fi
 				PressEnter
@@ -1623,7 +1651,8 @@ MainMenu(){
 				printf "\\n"
 				if Check_Lock menu; then
 					ScanBadBlocks readchk
-					CheckMTDList Info
+					ShowBBReport
+#					CheckMTDList Info
 					Clear_Lock
 				fi
 				PressEnter
@@ -1799,6 +1828,7 @@ Menu_Install(){
 	SetMTDs all
 	CreateMTDLog
 	Print_Output false "Done. Initial scan (baseline)"
+	ScanBadBlocks noread
 	ShowInitialScan
 	PressEnter
 	Clear_Lock
