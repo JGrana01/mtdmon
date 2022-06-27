@@ -1,6 +1,8 @@
 # mtdmon
 Script that scans and reports new Bad Blocks and ECC errors on mtd/nand devices on Asuswrt-merlin based routers.
-It can optionally email when new errors are detected
+It can optionally email and/or send an sms text message (via email) when new errors are detected and also a daily or weekly report.
+
+**Note: mtdmon only works with the mtd character devices (i.e. /dev/mtd0, /dev/mtd9, etc.) _not_ the block devices (/dev/mtdblock0, /dev/mtdblock9, etc.). It also will not report any information for ubi formatted mtd partitions.**
 
 
 ## Installation
@@ -14,9 +16,11 @@ The mtdmon script will stay in /jffs/scripts (it's small) and can be used to re-
 
 ## Usage
 
-Mtd_check runs from the command line.
+mtdmon runs once a day to check the routers mtd devices for new bad blocks and ECC errors. If detected, mtdmon can send an email and/or txt message to alert the user that a new bad block or ECC error was detected.
 
-$ mtd_check /dev/mtd[0-X] [-i] [-b]
+mtdmon can also be run from the command line. This is done to changes email settings, the list of mtd devices (partitions) to scan, run a scan and also view the various reports.
+
+$ mtdmon
 
 The -i option just displays the Flash type, Block size, page size and OOB size along with the total number of bytes and blocks on the mtd partition.
 The -b option only reports the number of bad blocks on the partition. This can be useful for sh/bash scripts to monitor mtd partitions for potential growing bad blocks.
