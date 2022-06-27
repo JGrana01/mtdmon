@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.7.0c"
+readonly SCRIPT_VERSION="v0.7.0d"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1287,12 +1287,12 @@ ShowBBReport(){
 
 ShowInitialScan(){
 
-	if [ ! -f $MTDLOG ]; then
+	if [ ! -f $MTDLOG.baseline ]; then
 		printf "\\nmtdmon initial scan not yet run, nothing to report\\nRun a scan by selecting 1 from the Main Menu\\n"
 		return 1
 	fi
 	repdate=$(date +"%H.%M on %F")
-	printf "\\nMtdmon Initial Scan (Baseline) $repdate\\n"
+	printf "\\nMtdmon Initial Scan (Baseline) $repdate\\n\\n"
 	fmt1="%-10s%-12s%-12s%-12s%-14s\\n"
 	fmt2="%-10s%-16s%-10s%-16s%-16s\\n"
 	printf "$fmt1" "mtd" "mount" "Bad Blocks" "Corr ECC" "Uncorrectable ECC"
@@ -1305,7 +1305,8 @@ ShowInitialScan(){
                 numcorr="$(echo $line | cut -d' ' -f4)"
                 numuncorr="$(echo $line | cut -d' ' -f5)"
 		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$numcorr" "$numuncorr"
-        done < $MTDLOG
+        done < $MTDLOG.baseline
+	printf "\\n"
 }
 
 
@@ -1637,12 +1638,14 @@ MainMenu(){
 			r)
 				printf "\\n"
 				ShowBBReport
+				ShowInitialScan
 				PressEnter
 				break
 			;;
 			re)
 				printf "\\n"
 				ShowBBErrorReport
+				ShowInitialScan
 				PressEnter
 				break
 			;;
@@ -1793,9 +1796,9 @@ Menu_Install(){
 	Auto_Cron create 2>/dev/null
 	Shortcut_Script create
 	Print_Output false "Setting recommended mtd devices and doing initial scan..."
-	SetMTDs recommended
+	SetMTDs All
 	CreateMTDLog
-	Print_Output false "Done. Initial scan (baseline):\\n"
+	Print_Output false "Done. Initial scan (baseline)"
 	ShowInitialScan
 	PressEnter
 	Clear_Lock
