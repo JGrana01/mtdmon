@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.6.10c"
+readonly SCRIPT_VERSION="v0.7.0c"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -963,7 +963,7 @@ SetSMSAddr(){
 			printf "mtdmon will do very little checking on the entered address. Best to run a test message from the menu when done!\\n"
 			printf "\\nPlease enter the address: "
 			read inadd
-			addln=`echo $inadd | awk '{print length}'`
+			addln=$(echo $inadd | awk '{print length}')
 			if [ $addln -gt 8 ]; then
 				TO_SMS=$inadd
 			else
@@ -1110,7 +1110,7 @@ while IFS=  read -r line
 #
 # now, make sure they contain a valid nand that supports Bad Blocks and ECC
 #
-	if `$MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null 2>&1`
+	if $($MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null 2>&1)
 	then
 		echo "$mtdevice $mtpoint" >> $MTDEVPART
 	fi
@@ -1122,8 +1122,8 @@ sed -i 's/\"//g' $MTDEVPART
 
 # Find jffs parition and replace its name
 
-jffsp=`awk -v jffsd="/jffs" '$2==jffsd {print $1}' /proc/mounts | sed 's/block//' | cut -d '/' -f 3`
-jffsmt=`cat $MTDEVPART | grep $jffsp | awk '{print $2 }'`
+jffsp=$(awk -v jffsd="/jffs" '$2==jffsd {print $1}' /proc/mounts | sed 's/block//' | cut -d '/' -f 3)
+jffsmt=$(cat $MTDEVPART | grep $jffsp | awk '{print $2 }')
 sed -i "s/$jffsmt/jffs/g" $MTDEVPART
 
 }
@@ -1239,10 +1239,10 @@ CheckMTDList() {
                 cflags="-e"
         fi
 
-	for mtdev in `cat $MTDMONLIST | awk '{ print $1}'`
+	for mtdev in $(cat $MTDMONLIST | awk '{ print $1}')
 		do
 			printf "${BOLD}$mtdev "
-			printf "`grep -w $mtdev $MTDMONLIST | awk '{print $2}'`${CLEARFORMAT}\\n"
+			printf "$(grep -w $mtdev $MTDMONLIST | awk '{print $2}')${CLEARFORMAT}\\n"
         		$MTD_CHECK_COMMAND $cflags /dev/$mtdev
 		done
 	
@@ -1251,12 +1251,12 @@ CheckMTDList() {
 CreateMTDLog(){
 	rm -f $MTDLOG
 
-	for i in `cat $MTDMONLIST | awk '{print $1}'`
+	for i in $(cat $MTDMONLIST | awk '{print $1}')
 	do
         	printf "$i   " >> $MTDLOG
-		printf "`grep -w $i $MTDMONLIST | awk '{print $2}'`   " >> $MTDLOG
-        	printf "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
-        	printf "  `date +"%m-%d-%Y-%h-%m" `\\n" >> $MTDLOG
+		printf "$(grep -w $i $MTDMONLIST | awk '{print $2}')   " >> $MTDLOG
+        	printf "$($MTD_CHECK_COMMAND -z /dev/$i) " >> $MTDLOG
+        	printf "  $(date +"%m-%d-%Y-%h-%m" )\\n" >> $MTDLOG
 	done
 }
 
@@ -1284,13 +1284,38 @@ ShowBBReport(){
         done < $MTDRLOG
 }
 
+
+ShowInitialScan(){
+
+	if [ ! -f $MTDLOG ]; then
+		printf "\\nmtdmon initial scan not yet run, nothing to report\\nRun a scan by selecting 1 from the Main Menu\\n"
+		return 1
+	fi
+	repdate=$(date +"%H.%M on %F")
+	printf "\\nMtdmon Initial Scan (Baseline) $repdate\\n"
+	fmt1="%-10s%-12s%-12s%-12s%-14s\\n"
+	fmt2="%-10s%-16s%-10s%-16s%-16s\\n"
+	printf "$fmt1" "mtd" "mount" "Bad Blocks" "Corr ECC" "Uncorrectable ECC"
+	printf "-----------------------------------------------------------------------------\n"
+        while IFS=  read -r line
+        do
+                mtdevice="$(echo $line | cut -d' ' -f1)"
+                mtmnt="$(echo $line | cut -d' ' -f2)"
+                numbbs="$(echo $line | cut -d' ' -f3)"
+                numcorr="$(echo $line | cut -d' ' -f4)"
+                numuncorr="$(echo $line | cut -d' ' -f5)"
+		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$numcorr" "$numuncorr"
+        done < $MTDLOG
+}
+
+
 ShowBBErrorReport(){
 
 
 	if [ -f "$MTDERRLOG" ]; then
 		repdate=$(date +"%H.%M on %F")
 		printf "\\nMtdmon Error Report $repdate\\n"
-		previouserrors=`cat $MTDERRLOG`
+		previouserrors="$(cat $MTDERRLOG)"
 		printf "$previouserrors"
 	else
 		printf "\\nNo earlier errors detected\\n"
@@ -1305,8 +1330,8 @@ ReadCheckMTD(){
 # if the # blocks read != # blocks on device return error
 # $1 = mtd device $2 = mount point $3 = "silent" if no printing
 
-bsize=`$MTD_CHECK_COMMAND -i $1 | grep -w Block | awk '{ print $3 }'`
-bcount=`$MTD_CHECK_COMMAND -i $1 | grep -w blocks | awk '{ print $5 }'`
+bsize="$($MTD_CHECK_COMMAND -i $1 | grep -w Block | awk '{ print $3 }')"
+bcount="$($MTD_CHECK_COMMAND -i $1 | grep -w blocks | awk '{ print $5 }')"
 
 # read blocks
 
@@ -1316,7 +1341,7 @@ fi
 
 /bin/dd if=$1 of=/dev/null bs=$bsize count=$bcount > /tmp/mtddd 2>&1
 
-readbs=`head -1 /tmp/mtddd | awk '{ print $1 }'`
+readbs="$(head -1 /tmp/mtddd | awk '{ print $1 }')"
 
 if [ debug = 1 ]; then
 	printf "Blocks Read: "$readbs" Blocks Expected: "$bcount+0" \\n"
@@ -1398,9 +1423,9 @@ ScanBadBlocks(){
 
                 latestinfo="$($MTD_CHECK_COMMAND -z /dev/$mtdevice)"    # check mtd device
 
-		latestbbs=`echo $latestinfo | awk '{print $1}'`
-		latestcorr=`echo $latestinfo | awk '{print $2}'`
-		latestuncorr=`echo $latestinfo | awk '{print $3}'`
+		latestbbs="$(echo $latestinfo | awk '{print $1}')"
+		latestcorr="$(echo $latestinfo | awk '{print $2}')"
+		latestuncorr="$(echo $latestinfo | awk '{print $3}')"
 
 		Debug_Output false "$mtdevice info $latestinfo\\n"
 		Debug_Output false "info latest: bb -- $latestbbs  corr $latestcorr uncor $latestuncorr\\n"
@@ -1477,7 +1502,7 @@ mtdmon_daily(){
 PrintLastResults(){
 	printf "\\n"
 	if [ -f "$LASTRESULTS" ]; then
-		lastresult=`cat $LASTRESULTS`
+		lastresult="$(cat $LASTRESULTS)"
 		if [ $(grep -c "Error" $LASTRESULTS) -ne 0 ]; then
 				printf "${ERR}${BOLD}    $lastresult${CLEARFORMAT}"
 		else
@@ -1493,7 +1518,7 @@ PrintLastResults(){
 PrintErrors(){
 	if [ -f "$MTDERRORS" ]; then
 		printf "\\nDetected Errors -"
-		previouserrors=`cat $MTDERRORS`
+		previouserrors="$(cat $MTDERRORS)"
 		printf "$previouserrors"
 	fi
 	printf "\\n"
@@ -1771,7 +1796,7 @@ Menu_Install(){
 	SetMTDs recommended
 	CreateMTDLog
 	Print_Output false "Done. Initial scan (baseline):\\n"
-	ShowBBReport
+	ShowInitialScan
 	PressEnter
 	Clear_Lock
 	ScriptHeader
