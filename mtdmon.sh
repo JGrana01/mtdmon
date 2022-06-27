@@ -1796,7 +1796,7 @@ Menu_Install(){
 	Auto_Cron create 2>/dev/null
 	Shortcut_Script create
 	Print_Output false "Setting recommended mtd devices and doing initial scan..."
-	SetMTDs All
+	SetMTDs all
 	CreateMTDLog
 	Print_Output false "Done. Initial scan (baseline)"
 	ShowInitialScan
