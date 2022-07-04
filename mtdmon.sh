@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.7.0e"
+readonly SCRIPT_VERSION="v0.8.0"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -54,7 +54,7 @@ MTDLOG="$SCRIPT_DIR/mtdlog"
 MTDRLOG="$SCRIPT_DIR/mtdrlog"
 MTDREPORT="$SCRIPT_DIR/mtdreport"
 MTDERRORS="$SCRIPT_DIR/mtderrors"
-MTDERRLOG="$SCRIPT_DIR/mtderrorlog"
+MTDERRLOG="$SCRIPT_DIR/mtderrlog"
 MTDWEEKLY="$SCRIPT_DIR/mtdweekly"
 MTDWEEKREPORT="$SCRIPT_DIR/mtdweekreport"
 LASTRESULTS="$SCRIPT_DIR/lastresult"
@@ -358,7 +358,7 @@ Conf_Exists(){
 		fi
 		return 0
 	else
-		{ echo "DAILYEMAIL=none"; echo "ERROREMAIL=no";  echo "EMAILTYPE=text"; echo "SENDSMS=no";  echo "TO_SMS=none"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
+		{ echo "DAILYEMAIL=none"; echo "EMAILTYPE=text"; echo "SENDSMS=no";  echo "TO_SMS=none"; echo "STORAGELOCATION=jffs"; echo "OUTPUTTIMEMODE=unix"; } > "$SCRIPT_CONF"
 		return 1
 	fi
 }
@@ -579,7 +579,6 @@ ScriptStorageLocation(){
 			fi
 			TO_SMS=$(grep "TO_SMS" "$SCRIPT_CONF" | cut -f2 -d"=")
 			SENDSMS=$(grep "SENDSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
-			ERROREMAIL=$(grep "ERROREMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
 #			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
 			MTDMON_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/mtdmon.txt"
 		;;
@@ -684,6 +683,7 @@ Generate_Email(){
 				if [ -f "$MTDERRORS" ]; then
 					cat $MTDERRORS >> /tmp/mail.txt
 				fi
+			echo "" >> /tmp/mail.txt
 			fi
 	elif [ "$emailtype" = "error" ]; then
 		Print_Output true "Attempting to send error email"
@@ -695,10 +695,17 @@ Generate_Email(){
 				echo "Date: $(date -R)"
 				echo ""
 			} > /tmp/mail.txt
+			echo "" >> /tmp/mail.txt
 			if [ -f "$MTDERRORS" ]; then
 				cat $MTDERRORS >> /tmp/mail.txt
+			else
+				cat "$MTDREPORT" >>/tmp/mail.txt
+
 			fi
-			cat "$MTDREPORT" >>/tmp/mail.txt
+			echo "" >> /tmp/mail.txt
+			echo "To get a detailed error report, run the r command from the mtdmon main menu" >> /tmp/mail.txt
+			echo "" >> /tmp/mail.txt
+
 	elif [ "$emailtype" = "test" ]; then
 		Print_Output true "Attempting to send test email"
 			# plain text email to send #
@@ -710,8 +717,8 @@ Generate_Email(){
 			} > /tmp/mail.txt
 			echo "" >> /tmp/mail.txt
 			echo "If you can read this email, the mtdmon email test succeeded" >> /tmp/mail.txt
-			echo "" >> /tmp/mail.txt
 	fi
+			echo "" >> /tmp/mail.txt
 	
 	#Send Email or sms
 	/usr/sbin/curl -s --show-error --url "$PROTOCOL://$SMTP:$PORT" \
@@ -739,6 +746,7 @@ fi
 }
 
 Generate_Message(){
+	
 
 	if [ "$SENDSMS" = "no" ] && [ ! "$1" = "test" ] ; then
 		return 1
@@ -811,7 +819,6 @@ if [ $debug = 0 ]; then
 		rm -f /tmp/mail.txt
 fi
 		PASSWORD=""
-		PressEnter
 		return 0
 	else
 		echo ""
@@ -1275,6 +1282,54 @@ CheckMTDList() {
 	
 }
 
+CheckMTDdevice() {
+
+	printf "\\nHere is the present monitor list:\\n"
+	cat $MTDMONLIST
+
+	printf "\\nSelect A for all or # for a specific mtd device\\n"
+
+	printf "\\nA) All devices in monitor list\\n"
+
+	i=1
+	j=1
+
+	monlistl=$(wc -l < $MTDMONLIST)
+
+        while IFS=  read -r line
+        do
+		mtddev=$(echo $line | cut -d' ' -f1)
+		printf "$i) $mtddev\\n"
+		i=$((i+1))
+        done < $MTDMONLIST
+
+	printf "\\n"
+	printf "Selection: "
+	read selection
+
+	if [ "$selection" = "A" ] || [ "$selection" = "a" ]; then
+		while [ "$j" -le "$monlistl" ]; do
+			mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
+			printf "${BOLD}$device${CLEARFORMAT}\\n"
+			$MTD_CHECK_COMMAND /dev/$mtddev
+			j=$((j+1))
+			printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
+			read pauz
+			if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
+				return
+			fi
+			printf "\\n"
+		done
+	elif [ "$selection" -gt "$monlistl" ]; then
+		printf "\\nSelection out of range...\\n"
+	else
+		printf "selection: $selection\\n"
+		mtddev=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f1)
+		printf "${BOLD}$device${CLEARFORMAT}\\n"
+		$MTD_CHECK_COMMAND /dev/$mtddev
+	fi
+}
+		
 CreateMTDLog(){
 	rm -f $MTDLOG
 
@@ -1307,7 +1362,12 @@ ShowBBReport(){
                 numcorr="$(echo $line | cut -d' ' -f4)"
                 numuncorr="$(echo $line | cut -d' ' -f5)"
                 newbbs="$(echo $line | cut -d' ' -f6)"
+
+		if [ "$newbbs" -gt 0 ] || [ $(grep -c "*" $numcorr) -ne 0 ] || [ $(grep -c "*" $numuncorr) -ne 0 ]; then
+			printf "${ERR}"
+		fi
 		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$newbbs" "$numcorr" "$numuncorr"
+		printf "${CLEARFORMAT}"
         done < $MTDRLOG
 }
 
@@ -1341,12 +1401,13 @@ ShowBBErrorReport(){
 
 
 	if [ -f "$MTDERRLOG" ]; then
-		repdate=$(date +"%H.%M on %F")
-		printf "\\nMtdmon Error Report $repdate\\n"
+		printf "\\n${BOLD}Mtdmon Error Report\\n${CLEARFORMAT}"
+		printf "\\n${ERR}${BOLD}Previous errors detected:${CLEARFORMAT}\\n\\n"
 		previouserrors="$(cat $MTDERRLOG)"
 		printf "$previouserrors"
+		printf "\\n\\n${PASS} --- End of Log ---\\n ${CLEARFORMAT}"
 	else
-		printf "\\nNo earlier errors detected\\n"
+		printf "\\n${PASS}No previous errors detected${CLEARFORMAT}\\n"
 	fi
 
 }
@@ -1418,6 +1479,7 @@ ScanBadBlocks(){
 	fi
 
 	newdate=$(date +"at %H.%M on %F")
+	justdate=$(date)
 
 	printf "\\nMtdmonReport Date $newdate\\n" > $MTDREPORT
 
@@ -1460,20 +1522,25 @@ ScanBadBlocks(){
 		Debug_Output false "info prev: bb -- $numbbs  corr $numcorr uncor $numuncorr\\n"
 
                 if [ "$latestbbs" -gt "$numbbs" ]; then
-			printf "New Bad Block(s) detected on $mtdevice  $mtmnt. Previous number: $numbbs, new number: $latestbbs\\n" >> $MTDERRORS
+			printf "$justdate  New Bad Block(s) detected on $mtdevice ($mtmnt) -\\n" >> $MTDERRORS
+			printf "%48s %d %s %d\\n" "Previous number:" "$numbbs" " new number:" "$latestbbs" >> $MTDERRORS
 			founderror=1
 			newbb=$((newbb+1))
-			origbbs="$(grep $mtdevice $MTDLOG.baseline | cut -d' ' -f1)"
+			origbbs="$(grep $mtdevice $MTDLOG.baseline | awk '{print $3}')"
 			newnumbb=$(($latestbbs-$origbbs))
 		fi
                 if [ "$latestcorr" -gt "$numcorr" ]; then
-			printf "New Correctable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numcorr, new number: $latestcorr\\n" >> $MTDERRORS
+			printf "$justdate  New Correctable ECC Error(s) detected on $mtdevice ($mtmnt) -\\n" >> $MTDERRORS
+			printf "%48s %d %s %d\\n" "Previous number:" "$numcorr" " new number:" "$latestcorr" >> $MTDERRORS
 			founderror=1
+			latestcorr="*$latestcorr"    # show change from last read
 			newecc=$((newecc+1))
 		fi
                 if [ "$latestuncorr" -gt "$numuncorr" ]; then
-			printf "New Uncorrectable ECC Error(s) detected on $mtdevice  $mtmnt. Previous number: $numuncorr, new number: $latestuncorr\\n" >> $MTDERRORS		founderror=1
+			printf "$justdate  New Uncorrectable ECC Error(s) detected on $mtdevice ($mtmnt) -\\n" >> $MTDERRORS
+			printf "%48s %d %s %d\\n" "Previous number:" "$numuncorr" " new number:" "$latestuncorr" >> $MTDERRORS
 			founderror=1
+			latestuncrorr="*$latestuncorr"
 			newuncor=$((newuncor+1))
 		fi
 
@@ -1481,7 +1548,7 @@ ScanBadBlocks(){
 
          done < $MTDLOG.old
 		if [ -f "$MTDERRORS" ]; then
-			printf "$newdate - \\n" >> $MTDERRLOG
+#			printf "$newdate - \\n" >> $MTDERRLOG
 			cat $MTDERRORS >> $MTDERRLOG    # MTDERRORS latest, MTDERRLOG historic
 		fi
 		if [ $founderror == 0 ]; then
@@ -1491,7 +1558,7 @@ ScanBadBlocks(){
 			printf "\\n All monitored mtd devices checked, no new errors\\n" >> $MTDREPORT
 			echo "\\n   Last check $newdate - no new errors" > $LASTRESULTS
 		else
-			echo "\\nErrors found during check at $newdate\\n Bad Blocks: $newbb  ECC Errors: $newecc  Uncorrectable ECC: $newuncor\\n" > $LASTRESULTS
+			echo "\\nError(s) found during check $newdate\\n" > $LASTRESULTS
 			printf "\\nReported Errors:\\n" >> $MTDREPORT
 			cat $MTDERRORS >> $MTDREPORT   #  add detail to report
 		fi
@@ -1499,11 +1566,23 @@ ScanBadBlocks(){
 		printf "\\n" >> $MTDREPORT
 }
 
+
+GetConfMessageVars() {
+
+	TO_SMS=$(grep "TO_SMS" "$SCRIPT_CONF" | cut -f2 -d"=")
+	SENDSMS=$(grep "SENDSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
+	DAILYEMAIL=$(grep "DAILYEMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
+	ERROREMAIL=$(grep "ERROREMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
+	EMAILTYPE=$(grep "EMAILTYPE" "$SCRIPT_CONF" | cut -f2 -d"=")
+}
+
+
 mtdmon_check(){
 
 	founderror=0
 	ScanBadBlocks readchks
 	if [ $founderror = 1 ]; then
+		GetConfMessageVars
 		Generate_Email error
 		Generate_Message error
 	fi
@@ -1511,13 +1590,16 @@ mtdmon_check(){
 }
 mtdmon_daily(){
 
+
+	GetConfMessageVars
+
 	if [ "$1" = "daily" ]; then
 		Generate_Email daily
 		Generate_Message daily
 	else
 		printf "mtdmon Weekly Report\\n\\n" > $MTDWEEKREPORT
 		printf "Monitoring:\\n" >> $MTDWEEKREPORT
-		cat mtdmonlist >> $MTDWEEKREPORT
+		cat $MTDMONLIST >> $MTDWEEKREPORT
 		printf "\\n\\n" >> $MTDWEEKREPORT
 		cat $MTDWEEKLY >> $MTDWEEKREPORT
 		Generate_Email weekly
@@ -1545,11 +1627,11 @@ PrintLastResults(){
 }
 PrintErrors(){
 	if [ -f "$MTDERRORS" ]; then
-		printf "\\nDetected Errors -"
+		printf "\\n${BOLD}${ERR}Detected Errors - "
 		previouserrors="$(cat $MTDERRORS)"
 		printf "$previouserrors"
 	fi
-	printf "\\n"
+	printf "${CLEARFORMAT}\\n"
 }
 
 GetEmailOption(){
@@ -1601,16 +1683,19 @@ MainMenu(){
 	GetEmailOption
 	GetSMSOption
 
-	printf "mtdmon check results -\\n"
+	printf "mtdmon last check results -"
 	PrintLastResults
 
+	if [ $(grep -c "Error" $LASTRESULTS) -eq 0 ] && [ -f $MTDERRLOG ]; then
+		printf "${ERR}${BOLD}   Errors have been detected previous...view list of errors (re)\\n${CLEARFORMAT}\\n"
+	fi
 
 	printf "1.    Check mtd for Bad Blocks and ECC now\\n\\n"
-	printf "2.    Run Verbose mtd stats now\\n\\n"
+	printf "2.    Run detailed mtd stats now\\n\\n"
 	printf "3.    Run read check mtd and scan for errors now (takes a while)\\n\\n"
 	printf "l.    View/Set list of mtd devies to monitor/check\\n\\n"
 	printf "r.    Show a report of the most recent check\\n\\n"
-	printf "re.   Show a report of errors detected \\n\\n"
+	printf "re.   Show a list of errors detected \\n\\n"
 	printf "se.   Setup/Change emails for error and daily or weekly summary \\n      Currently: ${BOLD}$MENU_DAILYEMAIL${CLEARFORMAT}\\n\\n"
 	printf "sm.   Setup/Change SMS settings    Currently: ${BOLD}$DOSMS${CLEARFORMAT}\\n\\n"
 	printf "v.    Edit mtdmon conf\\n\\n"
@@ -1631,6 +1716,7 @@ MainMenu(){
 				printf "\\n"
 				if Check_Lock menu; then
 					ScanBadBlocks noread
+					PrintLastResults
 					ShowBBReport
 #					CheckMTDList Info
 					Clear_Lock
@@ -1641,7 +1727,7 @@ MainMenu(){
 			2)
 				printf "\\n"
 				if Check_Lock menu; then
-					CheckMTDList Verbose
+					CheckMTDdevice
 					Clear_Lock
 				fi
 				PressEnter
@@ -1674,6 +1760,7 @@ MainMenu(){
 			re)
 				printf "\\n"
 				ShowBBErrorReport
+				printf "\\n${BOLD}For reference:\\n\\n${CLEARFORMAT}"
 				ShowInitialScan
 				PressEnter
 				break
@@ -1749,20 +1836,56 @@ MainMenu(){
 				exit 0
 			;;
 			z)
-				while true; do
-					printf "\\n${BOLD}Are you sure you want to uninstall %s? (y/n)${CLEARFORMAT}  " "$SCRIPT_NAME"
-					read -r confirm
-					case "$confirm" in
-						y|Y)
-							Menu_Uninstall
-							exit 0
-						;;
-						*)
-							break
-						;;
-					esac
-				done
+				printf "\\n${BOLD}Are you sure you want to uninstall %s? (y/n)${CLEARFORMAT}  " "$SCRIPT_NAME"
+				read -r confirm
+				case "$confirm" in
+					y|Y)
+						Menu_Uninstall
+						exit 0
+					;;
+					*)
+						break
+					;;
+				esac
 			;;
+
+# somewhat hidden commands for issues
+
+			resetbaseline)
+				printf "\\n${BOLD}Are you sure you want to clear and reinit baseline? (y/n)${CLEARFORMAT}  "
+				read -r confirm
+				case "$confirm" in
+					y|Y)
+
+						rm -f $MTDEVPART
+						rm -f $VALIDMTDS
+						rm -f $MTDMONLIST
+						rm -f $MTDERRLOG
+						rm -f $MTDERRORS
+						rm -f $MTDRLOG
+						rm -f $MTDLOG
+						rm -f $MTDREPORT
+						rm -f $LASTRESULTS
+						rm -f $PREVIOUSERRORS
+						rm -f $MTDEEKLY
+						rm -f $MTDEEKLYREPORT
+						rm -f $MTDLOG.baseline
+        					Print_Output false "Setting recommended mtd devices and doing initial scan..."
+        					GetMTDDevs
+						cp $MTDEVPART $MTDMONLIST
+        					CreateMTDLog
+        					ScanBadBlocks noread
+        					Print_Output false "Done. Initial scan (baseline)"
+        					ShowInitialScan
+        					PressEnter
+						break
+					;;
+					*)
+						break
+					;;
+				esac
+			;;
+
 
 # for debug use - remove when release
 			don)
@@ -1781,8 +1904,13 @@ MainMenu(){
 				PressEnter
 				break
 			;;
-			dd)
-				Update_Check
+			fbb)
+				forcedbb=1
+				PressEnter
+				break
+			;;
+			fecc)
+				forcedecc=1
 				PressEnter
 				break
 			;;
@@ -1907,6 +2035,7 @@ Menu_Edit(){
 }
 
 Menu_Uninstall(){
+
 	if [ -n "$PPID" ]; then
 		ps | grep -v grep | grep -v $$ | grep -v "$PPID" | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	else
