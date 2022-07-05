@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.0"
+readonly SCRIPT_VERSION="v0.8.1"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1284,50 +1284,59 @@ CheckMTDList() {
 
 CheckMTDdevice() {
 
-	printf "\\nHere is the present monitor list:\\n"
-	cat $MTDMONLIST
+	while true; do
+		i=1
+		j=1
 
-	printf "\\nSelect A for all or # for a specific mtd device\\n"
+		printf "\\nSelect A for all or # for a specific mtd device\\n"
 
-	printf "\\nA) All devices in monitor list\\n"
+		printf "\\n    A) All devices in monitor list\\n\\n"
 
-	i=1
-	j=1
+		monlistl=$(wc -l < $MTDMONLIST)
 
-	monlistl=$(wc -l < $MTDMONLIST)
+        	while IFS=  read -r line
+        	do
+			printf "    $i) $line\\n"
+			i=$((i+1))
+        	done < $MTDMONLIST
 
-        while IFS=  read -r line
-        do
-		mtddev=$(echo $line | cut -d' ' -f1)
-		printf "$i) $mtddev\\n"
-		i=$((i+1))
-        done < $MTDMONLIST
+		printf "\\n"
+		printf "    e) Exit to main menu\\n\\n"
+		printf "Selection: "
+		read -r selection
+		printf "\\n"
 
-	printf "\\n"
-	printf "Selection: "
-	read selection
+		if [ "$selection" = "" ]; then
+			 return
+		fi
 
-	if [ "$selection" = "A" ] || [ "$selection" = "a" ]; then
-		while [ "$j" -le "$monlistl" ]; do
-			mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
-			printf "${BOLD}$device${CLEARFORMAT}\\n"
+		if [ "$selection" = "E" ] || [ "$selection" = "e" ]; then
+			return
+		fi
+		if [ "$selection" = "A" ] || [ "$selection" = "a" ]; then
+			while [ "$j" -le "$monlistl" ]; do
+				mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
+				mtdmnt=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f2)
+				printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
+				$MTD_CHECK_COMMAND /dev/$mtddev
+				j=$((j+1))
+				printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
+				read pauz
+				if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
+					break
+				fi
+				printf "\\n"
+			done
+		elif [ "$selection" -gt "$monlistl" ] || [ "$selection" = "0" ]; then
+			printf "\\nSelection out of range...\\n"
+		else
+			mtddev=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f1)
+			mtdmnt=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f2)
+			printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
 			$MTD_CHECK_COMMAND /dev/$mtddev
-			j=$((j+1))
-			printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
-			read pauz
-			if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
-				return
-			fi
-			printf "\\n"
-		done
-	elif [ "$selection" -gt "$monlistl" ]; then
-		printf "\\nSelection out of range...\\n"
-	else
-		printf "selection: $selection\\n"
-		mtddev=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f1)
-		printf "${BOLD}$device${CLEARFORMAT}\\n"
-		$MTD_CHECK_COMMAND /dev/$mtddev
-	fi
+		fi
+		PressEnter
+	done
 }
 		
 CreateMTDLog(){
@@ -1363,7 +1372,7 @@ ShowBBReport(){
                 numuncorr="$(echo $line | cut -d' ' -f5)"
                 newbbs="$(echo $line | cut -d' ' -f6)"
 
-		if [ "$newbbs" -gt 0 ] || [ $(grep -c "*" $numcorr) -ne 0 ] || [ $(grep -c "*" $numuncorr) -ne 0 ]; then
+		if [ "$newbbs" -gt 0 ] || [ $(echo $numcorr | grep -c '[*]') -ne 0 ] || [ $(echo $numuncorr | grep -c '[*]') -ne 0 ]; then
 			printf "${ERR}"
 		fi
 		printf "$fmt2" "$mtdevice" "$mtmnt" "$numbbs" "$newbbs" "$numcorr" "$numuncorr"
