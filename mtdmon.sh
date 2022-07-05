@@ -66,6 +66,19 @@ readonly SHARED_REPO="https://raw.githubusercontent.com/jackyaz/shared-jy/master
 readonly SHARED_WEB_DIR="$SCRIPT_WEBPAGE_DIR/shared-jy"
 [ -z "$(nvram get odmpid)" ] && ROUTER_MODEL=$(nvram get productid) || ROUTER_MODEL=$(nvram get odmpid)
 ISHND=$(nvram get rc_support | grep -cw "bcmhnd")
+MACHTYPE=$(/bin/uname -m)
+
+if [ $MACHTYPE == "armv7l" ]; then
+	MTDAPP=mtd_check7l
+elif [ $MACHTYPE == "aarch64" ]; then
+	MTDAPP=mtd_check64
+else
+	printf "\\nSorry mtdmon requires the app mtd_check which is not compatible with this router...//n"
+	exit
+fi
+
+
+
 
 ### End of script variables ###
 
@@ -285,9 +298,9 @@ Validate_MtdDev(){
 Update_File(){
 	if [ "$1" = "mtd_check" ]; then ### mtd_check application
 		tmpfile="/tmp/$1"
-		Download_File "$MTDAPP_REPO/$1" "$tmpfile"
+		Download_File "$MTDAPP_REPO/$MTDAPP" "$tmpfile"
 		if ! diff -q "$tmpfile" "$MTDAPP_DIR/$1" >/dev/null 2>&1; then
-			Download_File "$MTDAPP_REPO/$1" "$MTDAPP_DIR/$1"
+			Download_File "$MTDAPP_REPO/$MTDAPP" "$MTDAPP_DIR/$1"
 			chmod 0755 "$MTDAPP_DIR/$1"
 			Print_Output true "New version of $1 downloaded" "$PASS"
 		fi
