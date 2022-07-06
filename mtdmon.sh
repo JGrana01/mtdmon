@@ -1175,6 +1175,7 @@ sed -i 's/\"//g' $MTDEVPART
 jffsp=$(awk -v jffsd="/jffs" '$2==jffsd {print $1}' /proc/mounts | sed 's/block//' | cut -d '/' -f 3)
 jffsmt=$(cat $MTDEVPART | grep $jffsp | awk '{print $2 }')
 sed -i "s/$jffsmt/jffs/g" $MTDEVPART
+rm -f /tmp/mtdevs
 
 }
 
@@ -1231,9 +1232,9 @@ SetMTDList() {
 	printf "Having mtdmon monitor all testable devices is fine but takes a little longer and longer reports.\\n"
 	PressEnter
 	printf "\\nThe list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
-	cat $MTDEVPART
+	/opt/bin/column $MTDEVPART
 	printf "\\n\\nmtdmon is presently monitoring:\\n\\n"
-	column $MTDMONLIST
+	/opt/bin/column $MTDMONLIST
 	printf "\\n\\nChoose:\\n"
 	printf "1.     Do recommended mtd devices\\n"
 	printf "2.     Do All mtd devices\\n"
@@ -1259,7 +1260,7 @@ SetMTDList() {
 			
 			;;
 			4)
-				column $MTDMONLIST
+				/opt/bin/column $MTDMONLIST
 				break
 			;;
 			e)
@@ -1274,7 +1275,7 @@ SetMTDList() {
 	
 	if [ ! $exitmenu = "true" ]; then
 		printf "\\n\\nThe list of mtd devices mtdmon will check:\\n"
-		column $MTDMONLIST
+		/opt/bin/column $MTDMONLIST
 	fi
 	printf "\\n"
 }
@@ -1578,7 +1579,7 @@ ScanBadBlocks(){
 		fi
 		if [ $founderror == 0 ]; then
 			printf "\\nMonitoring:\\n" >> $MTDREPORT
-			column $MTDMONLIST >> $MTDREPORT
+			/opt/bin/column $MTDMONLIST >> $MTDREPORT
 			printf "\\nReport Date $newdate\\n" >> $MTDREPORT
 			printf "\\n All monitored mtd devices checked, no new errors\\n" >> $MTDREPORT
 			echo "\\n   Last check $newdate - no new errors" > $LASTRESULTS
@@ -1624,7 +1625,7 @@ mtdmon_daily(){
 	else
 		printf "mtdmon Weekly Report\\n\\n" > $MTDWEEKREPORT
 		printf "Monitoring:\\n" >> $MTDWEEKREPORT
-		column $MTDMONLIST >> $MTDWEEKREPORT
+		/opt/bin/column $MTDMONLIST >> $MTDWEEKREPORT
 		printf "\\n\\n" >> $MTDWEEKREPORT
 		cat $MTDWEEKLY >> $MTDWEEKREPORT
 		Generate_Email weekly
