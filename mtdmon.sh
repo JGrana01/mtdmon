@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.1"
+readonly SCRIPT_VERSION="v0.8.2"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -551,8 +551,11 @@ Check_Requirements(){
 	fi
 
 	if [ "$CHECKSFAILED" = "false" ]; then
-#		Print_Output false "Installing required packages from Entware" "$PASS"
-#		opkg update
+		if [ ! -f /opt/bin/column ]; then
+			Print_Output false "Installing required packages from Entware" "$PASS"
+			opkg update
+			opkg install column
+		fi
 		return 0
 	else
 		return 1
@@ -1230,7 +1233,7 @@ SetMTDList() {
 	printf "\\nThe list of valid (checkable) mtd devices/partitions on this router are:\\n\\n"
 	cat $MTDEVPART
 	printf "\\n\\nmtdmon is presently monitoring:\\n\\n"
-	cat $MTDMONLIST
+	column $MTDMONLIST
 	printf "\\n\\nChoose:\\n"
 	printf "1.     Do recommended mtd devices\\n"
 	printf "2.     Do All mtd devices\\n"
@@ -1256,7 +1259,7 @@ SetMTDList() {
 			
 			;;
 			4)
-				cat $MTDMONLIST
+				column $MTDMONLIST
 				break
 			;;
 			e)
@@ -1271,7 +1274,7 @@ SetMTDList() {
 	
 	if [ ! $exitmenu = "true" ]; then
 		printf "\\n\\nThe list of mtd devices mtdmon will check:\\n"
-		cat $MTDMONLIST
+		column $MTDMONLIST
 	fi
 	printf "\\n"
 }
@@ -1575,7 +1578,7 @@ ScanBadBlocks(){
 		fi
 		if [ $founderror == 0 ]; then
 			printf "\\nMonitoring:\\n" >> $MTDREPORT
-			cat $MTDMONLIST >> $MTDREPORT
+			column $MTDMONLIST >> $MTDREPORT
 			printf "\\nReport Date $newdate\\n" >> $MTDREPORT
 			printf "\\n All monitored mtd devices checked, no new errors\\n" >> $MTDREPORT
 			echo "\\n   Last check $newdate - no new errors" > $LASTRESULTS
@@ -1621,7 +1624,7 @@ mtdmon_daily(){
 	else
 		printf "mtdmon Weekly Report\\n\\n" > $MTDWEEKREPORT
 		printf "Monitoring:\\n" >> $MTDWEEKREPORT
-		cat $MTDMONLIST >> $MTDWEEKREPORT
+		column $MTDMONLIST >> $MTDWEEKREPORT
 		printf "\\n\\n" >> $MTDWEEKREPORT
 		cat $MTDWEEKLY >> $MTDWEEKREPORT
 		Generate_Email weekly
@@ -1949,7 +1952,7 @@ MainMenu(){
 
 Menu_Install(){
 	ScriptHeader
-	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by JGrana using Jack Yaz addon as template"
+	Print_Output true "Welcome to $SCRIPT_NAME $SCRIPT_VERSION, a script by JGrana using Jack Yaz addons as template"
 	sleep 1
 	
 	Print_Output false "Checking your router meets the requirements for $SCRIPT_NAME"
