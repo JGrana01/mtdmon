@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.2"
+readonly SCRIPT_VERSION="v0.8.3"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1285,7 +1285,7 @@ CheckMTDList() {
 	printf "Checking:\\n\\n"
 
        	if [ "$1" = "Verbose" ]; then
-                cflags=""
+                cflags="-c"
         else
                 cflags="-e"
         fi
@@ -1335,7 +1335,7 @@ CheckMTDdevice() {
 				mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
 				mtdmnt=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f2)
 				printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
-				$MTD_CHECK_COMMAND /dev/$mtddev
+				$MTD_CHECK_COMMAN -c /dev/$mtddev
 				j=$((j+1))
 				printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
 				read pauz
@@ -1350,7 +1350,7 @@ CheckMTDdevice() {
 			mtddev=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f1)
 			mtdmnt=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f2)
 			printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
-			$MTD_CHECK_COMMAND /dev/$mtddev
+			$MTD_CHECK_COMMAND -c /dev/$mtddev
 		fi
 		PressEnter
 	done
