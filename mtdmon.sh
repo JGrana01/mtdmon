@@ -48,6 +48,7 @@ readonly MTD_CHECK_COMMAND="/opt/bin/mtd_check"
 readonly MTDAPP_DIR="/opt/bin"
 
 MTDEVPART="$SCRIPT_DIR/mtddevs"
+MTDEVALL="$SCRIPT_DIR/allmtddevs"
 VALIDMTDS="$SCRIPT_DIR/validmtds"
 MTDMONLIST="$SCRIPT_DIR/mtdmonlist"
 MTDLOG="$SCRIPT_DIR/mtdlog"
@@ -1152,6 +1153,7 @@ SetUpSMS(){
 
 GetMTDDevs() {
 cat /proc/mtd | grep -v 'ubi\|dev' > /tmp/mtdevs
+rm -f $MTDEVALL
 rm -f $MTDEVPART
 while IFS=  read -r line
      do
@@ -1163,6 +1165,9 @@ while IFS=  read -r line
 	if $($MTD_CHECK_COMMAND -i /dev/$mtdevice > /dev/null 2>&1)
 	then
 		echo "$mtdevice $mtpoint" >> $MTDEVPART
+		echo "$mtdevice $mtpoint" >> $MTDEVALL
+	else
+		echo "$mtdevice $mtpoint" >> $MTDEVALL
 	fi
 done < /tmp/mtdevs
 
@@ -1175,6 +1180,7 @@ sed -i 's/\"//g' $MTDEVPART
 jffsp=$(awk -v jffsd="/jffs" '$2==jffsd {print $1}' /proc/mounts | sed 's/block//' | cut -d '/' -f 3)
 jffsmt=$(cat $MTDEVPART | grep $jffsp | awk '{print $2 }')
 sed -i "s/$jffsmt/jffs/g" $MTDEVPART
+sed -i "s/$jffsmt/jffs/g" $MTDEVALL
 rm -f /tmp/mtdevs
 
 }
@@ -1357,14 +1363,25 @@ CheckMTDdevice() {
 }
 		
 CreateMTDLog(){
-	rm -f $MTDLOG
+        rm -f $MTDLOG
 
-	for i in $(cat $MTDMONLIST | awk '{print $1}')
+        for i in `cat $MTDMONLIST | awk '{print $1}'`
+        do
+                printf "$i   " >> $MTDLOG
+                printf "`grep -w $i $MTDMONLIST | awk '{print $2}'`   " >> $MTDLOG
+                printf "`$MTD_CHECK_COMMAND -z /dev/$i` " >> $MTDLOG
+                printf "  `date +"%m-%d-%Y-%h-%m" `\\n" >> $MTDLOG
+        done
+}
+
+InfoAllMtds(){
+
+	for i in $(cat $MTDEVALL | awk '{print $1}')
 	do
-        	printf "$i   " >> $MTDLOG
-		printf "$(grep -w $i $MTDMONLIST | awk '{print $2}')   " >> $MTDLOG
-        	printf "$($MTD_CHECK_COMMAND -z /dev/$i) " >> $MTDLOG
-        	printf "  $(date +"%m-%d-%Y-%h-%m" )\\n" >> $MTDLOG
+		mtdmnt="$(grep -w $i $MTDMONLIST | awk '{print $2}')"
+		printf "$i  $mtdmnt\\n"
+        	$MTD_CHECK_COMMAND -c -i /dev/$i
+		printf "\\n\\n"
 	done
 }
 
@@ -1750,6 +1767,10 @@ MainMenu(){
 				PressEnter
 				break
 			;;
+			a)
+				InfoAllMtds
+				PressEnter
+				break
 			2)
 				printf "\\n"
 				if Check_Lock menu; then
@@ -1883,6 +1904,7 @@ MainMenu(){
 				case "$confirm" in
 					y|Y)
 
+						rm -f $MTDEVALL
 						rm -f $MTDEVPART
 						rm -f $VALIDMTDS
 						rm -f $MTDMONLIST
