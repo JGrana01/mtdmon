@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.3"
+readonly SCRIPT_VERSION="v0.8.4"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1595,10 +1595,10 @@ ScanBadBlocks(){
 			cat $MTDERRORS >> $MTDERRLOG    # MTDERRORS latest, MTDERRLOG historic
 		fi
 		if [ $founderror == 0 ]; then
-			printf "\\nMonitoring:\\n" >> $MTDREPORT
-			/opt/bin/column $MTDMONLIST >> $MTDREPORT
 			printf "\\nReport Date $newdate\\n" >> $MTDREPORT
 			printf "\\n All monitored mtd devices checked, no new errors\\n" >> $MTDREPORT
+			printf "\\nMonitoring:\\n" >> $MTDREPORT
+			/opt/bin/column $MTDMONLIST >> $MTDREPORT
 			echo "\\n   Last check $newdate - no new errors" > $LASTRESULTS
 		else
 			echo "\\nError(s) found during check $newdate\\n" > $LASTRESULTS
