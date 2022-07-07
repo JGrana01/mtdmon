@@ -1341,7 +1341,7 @@ CheckMTDdevice() {
 				mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
 				mtdmnt=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f2)
 				printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
-				$MTD_CHECK_COMMAN -c /dev/$mtddev
+				$MTD_CHECK_COMMAND -c /dev/$mtddev
 				j=$((j+1))
 				printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
 				read pauz
@@ -1376,12 +1376,24 @@ CreateMTDLog(){
 
 InfoAllMtds(){
 
+	if [ ! -f $MTDEVALL ]; then
+		GetMTDDevs
+	fi
+	j=1
 	for i in $(cat $MTDEVALL | awk '{print $1}')
 	do
-		mtdmnt="$(grep -w $i $MTDMONLIST | awk '{print $2}')"
+		mtdmnt="$(grep -w $i $MTDEVALL | awk '{print $2}')"
 		printf "$i  $mtdmnt\\n"
         	$MTD_CHECK_COMMAND -c -i /dev/$i
-		printf "\\n\\n"
+		if [ $((j%4)) -eq 0 ]; then
+			printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
+			read pauz
+			if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
+				return
+			fi
+		fi
+		j=$((j+1))
+		printf "\\n"
 	done
 }
 
@@ -1771,6 +1783,7 @@ MainMenu(){
 				InfoAllMtds
 				PressEnter
 				break
+			;;
 			2)
 				printf "\\n"
 				if Check_Lock menu; then
