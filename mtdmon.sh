@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.4"
+readonly SCRIPT_VERSION="v0.8.5"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -448,9 +448,22 @@ Auto_Startup(){
 Auto_Cron(){
 	case $1 in
 		create)
+			emailtype=$(grep "DAILYEMAIL" "$SCRIPT_CONF" | cut -f2 -d"=")
 			STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_check")
 			if [ "$STARTUPLINECOUNT" -eq 0 ]; then
 				cru a "${SCRIPT_NAME}_check" "10 0 * * * /jffs/scripts/$SCRIPT_NAME check"
+			fi
+			if [ "$emailtype" = "daily" ]; then
+				STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_daily")
+					if [ "$STARTUPLINECOUNT" -eq 0 ]; then
+						cru a "${SCRIPT_NAME}_daily" "30 0 * * * /jffs/scripts/$SCRIPT_NAME daily"
+					fi
+			fi
+			if [ "$emailtype" = "weekly" ]; then
+				STARTUPLINECOUNT=$(cru l | grep -c "${SCRIPT_NAME}_daily")
+					if [ "$STARTUPLINECOUNT" -eq 0 ]; then
+						cru a "${SCRIPT_NAME}_daily" "30 0 * * * /jffs/scripts/$SCRIPT_NAME daily"
+					fi
 			fi
 		;;
 		daily)
@@ -628,6 +641,7 @@ Generate_Stats(){
 	Conf_Exists
 	ScriptStorageLocation load
 	Auto_Cron create 2>/dev/null
+	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	TZ=$(cat /etc/TZ)
 	export TZ
@@ -2012,6 +2026,7 @@ Menu_Install(){
 	Update_File mtd_check
 	
 	Auto_Cron create 2>/dev/null
+	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	Print_Output false "Setting recommended mtd devices and doing initial scan..."
 	SetMTDs all
@@ -2049,6 +2064,7 @@ Menu_Startup(){
 	Conf_Exists
 	ScriptStorageLocation load
 	Auto_Cron create 2>/dev/null
+	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	GetMTDDevs
 	Clear_Lock
@@ -2103,6 +2119,7 @@ Menu_Uninstall(){
 		ps | grep -v grep | grep -v $$ | grep -i "$SCRIPT_NAME" | grep generate | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	fi
 	Print_Output true "Removing $SCRIPT_NAME..." "$PASS"
+	Auto_Startup delete 2>/dev/null
 	Auto_Cron delete 2>/dev/null
 	
 	Shortcut_Script delete
@@ -2224,6 +2241,7 @@ if [ -z "$1" ]; then
 	Conf_Exists
 	ScriptStorageLocation load
 	Auto_Cron create 2>/dev/null
+	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	ScriptHeader
 	MainMenu
@@ -2288,6 +2306,7 @@ case "$1" in
 		Conf_Exists
 		ScriptStorageLocation load
 		Auto_Cron create 2>/dev/null
+		Auto_Startup create 2>/dev/null
 		Shortcut_Script create
 		Generate_CSVs
 		Clear_Lock
