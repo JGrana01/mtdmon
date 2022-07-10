@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.5"
+readonly SCRIPT_VERSION="v0.8.6"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1488,8 +1488,8 @@ ReadCheckMTD(){
 # if the # blocks read != # blocks on device return error
 # $1 = mtd device $2 = mount point $3 = "silent" if no printing
 
-bsize="$($MTD_CHECK_COMMAND -i $1 | grep -w Block | awk '{ print $3 }')"
-bcount="$($MTD_CHECK_COMMAND -i $1 | grep -w blocks | awk '{ print $5 }')"
+bsize="$($MTD_CHECK_COMMAND -d $1 | grep -w Block | awk '{ print $3 }')"
+bcount="$($MTD_CHECK_COMMAND -d $1 | grep -w blocks | awk '{ print $5 }')"
 
 # read blocks
 
