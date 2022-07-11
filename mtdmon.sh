@@ -1200,6 +1200,7 @@ done < /tmp/mtdevs
 # clean up quotes
 
 sed -i 's/\"//g' $MTDEVPART
+sed -i 's/\"//g' $MTDEVALL
 
 # Find jffs parition and replace its name
 
@@ -1365,7 +1366,7 @@ CheckMTDdevice() {
 		printf "\\n    A) All mtd devices"
 		printf "\\n    M) All mtd devices in the monitor list (shown in ${WARN}yellow${CLEARFORMAT})\\n\\n"
 
-		devlistl=$(wc -l < $MTDEVPART)
+		devlistl=$(wc -l < $MTDEVALL)
 
         	while IFS=  read -r line
         	do
@@ -1375,7 +1376,7 @@ CheckMTDdevice() {
 				printf "    $i) $line\\n"
 			fi
 			i=$((i+1))
-        	done < $MTDEVPART
+        	done < $MTDEVALL
 
 		printf "\\n"
 		printf "    e) Exit to main menu\\n\\n"
@@ -1396,7 +1397,7 @@ CheckMTDdevice() {
 			DOLIST=$MTDMONLIST
 			dolistl=$(wc -l < $DOLIST)
 		else
-			DOLIST=$MTDEVPART
+			DOLIST=$MTDEVALL
 		fi
 
 		dolistl=$(wc -l < $DOLIST)
