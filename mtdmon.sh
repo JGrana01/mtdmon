@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.7"
+readonly SCRIPT_VERSION="v0.8.8"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -593,7 +593,6 @@ ScriptStorageLocation(){
 		usb)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=usb/' "$SCRIPT_CONF"
 			mkdir -p "/opt/share/$SCRIPT_NAME.d/"
-#			mv "/jffs/addons/$SCRIPT_NAME.d/csv" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf.bak" "/opt/share/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/opt/share/$SCRIPT_NAME.d/mtdmon.conf"
@@ -602,7 +601,6 @@ ScriptStorageLocation(){
 		jffs)
 			sed -i 's/^STORAGELOCATION.*$/STORAGELOCATION=jffs/' "$SCRIPT_CONF"
 			mkdir -p "/jffs/addons/$SCRIPT_NAME.d/"
-#			mv "/opt/share/$SCRIPT_NAME.d/csv" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			mv "/opt/share/$SCRIPT_NAME.d/mtdmon.conf.bak" "/jffs/addons/$SCRIPT_NAME.d/" 2>/dev/null
 			SCRIPT_CONF="/jffs/addons/$SCRIPT_NAME.d/mtdmon.conf"
@@ -621,8 +619,6 @@ ScriptStorageLocation(){
 			fi
 			TO_SMS=$(grep "TO_SMS" "$SCRIPT_CONF" | cut -f2 -d"=")
 			SENDSMS=$(grep "SENDSMS" "$SCRIPT_CONF" | cut -f2 -d"=")
-#			CSV_OUTPUT_DIR="$SCRIPT_STORAGE_DIR/csv"
-			MTDMON_OUTPUT_FILE="$SCRIPT_STORAGE_DIR/mtdmon.txt"
 		;;
 	esac
 }
@@ -631,11 +627,9 @@ OutputTimeMode(){
 	case "$1" in
 		unix)
 			sed -i 's/^OUTPUTTIMEMODE.*$/OUTPUTTIMEMODE=unix/' "$SCRIPT_CONF"
-#			Generate_CSVs
 		;;
 		non-unix)
 			sed -i 's/^OUTPUTTIMEMODE.*$/OUTPUTTIMEMODE=non-unix/' "$SCRIPT_CONF"
-#			Generate_CSVs
 		;;
 		check)
 			OUTPUTTIMEMODE=$(grep "OUTPUTTIMEMODE" "$SCRIPT_CONF" | cut -f2 -d"=")
@@ -1283,7 +1277,6 @@ SetMTDList() {
 				break
 			;;
 			2)
-#				GetMTDDevs
 				SetMTDs all
 				break
 			;;
@@ -1430,7 +1423,6 @@ CheckMTDdevice() {
 # only numbers beyond here!
 
 		elif [ $(IsANumber $selection) = 0 ] && [ "$selection" -gt "0" ] && [ "$selection" -lt $((dolistl+1)) ]; then
-#		elif [ "$selection" -gt "0" ] && [ "$selection" -lt $((dolistl+1)) ]; then
 			mtddev=$(head -$selection $DOLIST | tail -1 | cut -d' ' -f1)
 			mtdmnt=$(head -$selection $DOLIST | tail -1 | cut -d' ' -f2)
 			printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
@@ -1573,8 +1565,8 @@ fi
 
 if [ ! "$readbs" = "$bcount+0" ]; then
 	if [ ! $3 = "silent" ]; then
-		printf "Did not read all blocks\\n"
-		printf "Expected  $bcount+0    Got  $readbs\\n"
+		printf "${ERR}Did not read all blocks\\n"
+		printf "Expected  $bcount+0    Got  $readbs${CLEARFORMAT}\\n"
 	fi
 	return 1
 fi
@@ -1883,7 +1875,6 @@ MainMenu(){
 				if Check_Lock menu; then
 					ScanBadBlocks readchk
 					ShowBBReport
-#					CheckMTDList Info
 					Clear_Lock
 				fi
 				PressEnter
@@ -2016,6 +2007,7 @@ MainMenu(){
 						rm -f $MTDEEKLY
 						rm -f $MTDEEKLYREPORT
 						rm -f $MTDLOG.baseline
+        					Print_Output false "Previous information deleted.\\n"
         					Print_Output false "Setting recommended mtd devices and doing initial scan..."
         					GetMTDDevs
 						cp $MTDEVPART $MTDMONLIST
@@ -2033,7 +2025,7 @@ MainMenu(){
 			;;
 
 
-# for debug use - remove when release
+# for debug use - remove when release (or don't mention ;-)
 			don)
 				debug=1
 				PressEnter
@@ -2041,22 +2033,6 @@ MainMenu(){
 			;;
 			doff)
 				debug=0
-				PressEnter
-				break
-			;;
-			scan)
-				CreateMTDLog
-#				ScanBadBlocks readchks
-				PressEnter
-				break
-			;;
-			fbb)
-				forcedbb=1
-				PressEnter
-				break
-			;;
-			fecc)
-				forcedecc=1
 				PressEnter
 				break
 			;;
@@ -2286,8 +2262,6 @@ Available commands:
   $SCRIPT_NAME install            installs script
   $SCRIPT_NAME uninstall          uninstalls script
   $SCRIPT_NAME generate           get latest data from mtdmon and mtd_check. 
-  $SCRIPT_NAME summary            get daily summary data from mtdmon. runs automatically at end of day.
-  $SCRIPT_NAME outputcsv          create CSVs from data (not enabled, future feature)
   $SCRIPT_NAME develop            switch to development branch
   $SCRIPT_NAME stable             switch to stable branch
 EOF
@@ -2315,6 +2289,9 @@ if [ -z "$1" ]; then
 	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	ScriptHeader
+	if [ ! -f $MTDEVPART ] || [ ! -f $MTDEVALL ]; then
+		GetMTDDevs
+	fi
 	MainMenu
 	exit 0
 fi
@@ -2358,11 +2335,6 @@ case "$1" in
 		mtdmon_daily "weekly"
 		Clear_Lock
 		exit 0
-	;;
-	outputcsv)
-		NTP_Ready
-		Entware_Ready
-		Generate_CSVs
 	;;
 	update)
 		Update_Version
