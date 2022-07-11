@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.6"
+readonly SCRIPT_VERSION="v0.8.7"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -104,7 +104,7 @@ Print_Output(){
 # print out a message if debug is enabled
 # $1 = print to syslog, $2 = message to print
 Debug_Output(){
-	if [ $debug = 1 ]; then
+	if [ $debug -eq 1 ]; then
 		if [ "$1" = "true" ]; then
 			logger -t "$SCRIPT_NAME" "$2"
 		fi
@@ -282,6 +282,18 @@ Validate_Number(){
 	else
 		return 1
 	fi
+}
+
+IsANumber(){
+	case $1 in
+    		''|*[!0-9]*)
+			echo 1
+    			;;
+
+    			*)
+			echo 0
+			;;
+	esac
 }
 
 Validate_MtdDev(){
@@ -1220,7 +1232,7 @@ SetMTDs() {
 		;;
 		recommended)
 			rm -f $MTDMONLIST
-			if [ $ISHND == 1 ];
+			if [ $ISHND -eq 1 ];
 			then
 				validmtds="rootfs data nvram image bootfs jffs misc1 misc2 misc3"
 			else
@@ -1321,21 +1333,49 @@ CheckMTDList() {
 
 CheckMTDdevice() {
 
+	pauzinfo=0
+
+       	if [ "$1" = "info" ]; then
+		cflags="-c -i"
+		pauzinfo=1
+		printf "\\n${BOLD}   Information on MTD Device${CLEARFORMAT}\\n\\n"
+		printf "This will display information on one, all or the monitored list of mtd devices showing the flash type, flash flags\\n"
+		printf "the blocks size, page size and OOB (Out of Band area usually for ECC. It will also show the total size and number of blocks\\n"
+		printf "on the device. Last, it will show the latest number of bad blocks and ECC information\\n"
+		printf "${WARN}Not all mtd devices on the router support Bad Block/ECC management.${CLEARFORMAT} In some cases this may me a hardware limitation or\\n"
+		printf "if the mtd partition/device are being used as a UBI volume management device (bad block handling is done by UBI). In this\\n"
+		printf "case mtdmon will only display what it can determine from the OS driver.\\n\\n"
+	else
+		cflags="-c"
+		printf "\\n${BOLD}   Detailed Scan of MTD Device${CLEARFORMAT}\\n\\n"
+		printf "This will run a scan on one, all or the monitored list of mtd devices showing empty, partially filled, full and bad blocks.\\n"
+		printf "It will also show any corrected and uncorrectable ECC errors reported by the mtd driver.\\n"
+		printf "${WARN}Not all mtd devices on the router support Bad Block/ECC management.${CLEARFORMAT} In some cases this may me a hardware limitation or\\n"
+		printf "if the mtd partition/device are being used as a UBI volume management device (bad block handling is done by UBI). In this\\n"
+		printf "case mtdmon will only display what it can determine from the OS driver.\\n\\n"
+	fi
+
+
 	while true; do
 		i=1
 		j=1
 
-		printf "\\nSelect A for all or # for a specific mtd device\\n"
+		printf "\\nSelect A for all, M for monitor list or # for a specific mtd device\\n"
 
-		printf "\\n    A) All devices in monitor list\\n\\n"
+		printf "\\n    A) All mtd devices"
+		printf "\\n    M) All mtd devices in the monitor list (shown in ${WARN}yellow${CLEARFORMAT})\\n\\n"
 
-		monlistl=$(wc -l < $MTDMONLIST)
+		devlistl=$(wc -l < $MTDEVPART)
 
         	while IFS=  read -r line
         	do
-			printf "    $i) $line\\n"
+			if [ "$(grep -c "$line" $MTDMONLIST)" -gt 0 ]; then
+				printf "${WARN}    $i) $line${CLEARFORMAT}\\n"
+			else
+				printf "    $i) $line\\n"
+			fi
 			i=$((i+1))
-        	done < $MTDMONLIST
+        	done < $MTDEVPART
 
 		printf "\\n"
 		printf "    e) Exit to main menu\\n\\n"
@@ -1347,30 +1387,55 @@ CheckMTDdevice() {
 			 return
 		fi
 
-		if [ "$selection" = "E" ] || [ "$selection" = "e" ]; then
+		selection=$(echo $selection | tr [a-z] [A-Z])
+
+		if [ "$selection" = "E" ]; then
 			return
 		fi
-		if [ "$selection" = "A" ] || [ "$selection" = "a" ]; then
-			while [ "$j" -le "$monlistl" ]; do
-				mtddev=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f1)
-				mtdmnt=$(head -$j $MTDMONLIST | tail -1 | cut -d' ' -f2)
+		if [ "$selection" = "M" ]; then
+			DOLIST=$MTDMONLIST
+			dolistl=$(wc -l < $DOLIST)
+		else
+			DOLIST=$MTDEVPART
+		fi
+
+		dolistl=$(wc -l < $DOLIST)
+
+		if [ "$selection" = "A" ] || [ "$selection" = "M" ]; then
+			while [ "$j" -le "$dolistl" ]; do
+				mtddev=$(head -$j $DOLIST | tail -1 | cut -d' ' -f1)
+				mtdmnt=$(head -$j $DOLIST | tail -1 | cut -d' ' -f2)
 				printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
-				$MTD_CHECK_COMMAND -c /dev/$mtddev
+				$MTD_CHECK_COMMAND $cflags /dev/$mtddev
 				j=$((j+1))
-				printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
-				read pauz
-				if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
-					break
+				if [ $pauzinfo -eq 1 ]; then
+					if [ $((j%4)) -eq 0 ]; then
+						printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
+						read pauz
+						if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
+							break
+						fi
+					fi
+				else
+					printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
+					read pauz
+					if [ "$pauz" = "q" ] || [ "$pauz" = "Q" ]; then
+						break
+					fi
 				fi
 				printf "\\n"
 			done
-		elif [ "$selection" -gt "$monlistl" ] || [ "$selection" = "0" ]; then
-			printf "\\nSelection out of range...\\n"
-		else
-			mtddev=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f1)
-			mtdmnt=$(head -$selection $MTDMONLIST | tail -1 | cut -d' ' -f2)
+
+# only numbers beyond here!
+
+		elif [ $(IsANumber $selection) = 0 ] && [ "$selection" -gt "0" ] && [ "$selection" -lt $((dolistl+1)) ]; then
+#		elif [ "$selection" -gt "0" ] && [ "$selection" -lt $((dolistl+1)) ]; then
+			mtddev=$(head -$selection $DOLIST | tail -1 | cut -d' ' -f1)
+			mtdmnt=$(head -$selection $DOLIST | tail -1 | cut -d' ' -f2)
 			printf "${BOLD}$mtddev  $mtdmnt${CLEARFORMAT}\\n"
-			$MTD_CHECK_COMMAND -c /dev/$mtddev
+			$MTD_CHECK_COMMAND $cflags /dev/$mtddev
+		else
+			printf "\\nSelection out of range...\\n"
 		fi
 		PressEnter
 	done
@@ -1397,7 +1462,7 @@ InfoAllMtds(){
 	for i in $(cat $MTDEVALL | awk '{print $1}')
 	do
 		mtdmnt="$(grep -w $i $MTDEVALL | awk '{print $2}')"
-		printf "$i  $mtdmnt\\n"
+		printf "${BOLD}${WARN}$i  $mtdmnt${CLEARFORMAT}\\n"
         	$MTD_CHECK_COMMAND -c -i /dev/$i
 		if [ $((j%4)) -eq 0 ]; then
 			printf "${PASS} Paused - press Enter to continue or q to quit ${CLEARFORMAT}"
@@ -1620,7 +1685,7 @@ ScanBadBlocks(){
 #			printf "$newdate - \\n" >> $MTDERRLOG
 			cat $MTDERRORS >> $MTDERRLOG    # MTDERRORS latest, MTDERRLOG historic
 		fi
-		if [ $founderror == 0 ]; then
+		if [ $founderror -eq 0 ]; then
 			printf "\\nReport Date $newdate\\n" >> $MTDREPORT
 			printf "\\n All monitored mtd devices checked, no new errors\\n" >> $MTDREPORT
 			printf "\\nMonitoring:\\n" >> $MTDREPORT
@@ -1759,9 +1824,10 @@ MainMenu(){
 		printf "${ERR}${BOLD}   Errors have been detected previous...view list of errors (re)\\n${CLEARFORMAT}\\n"
 	fi
 
-	printf "1.    Check mtd for Bad Blocks and ECC now\\n\\n"
-	printf "2.    Run detailed mtd stats now\\n\\n"
-	printf "3.    Run read check mtd and scan for errors now (takes a while)\\n\\n"
+	printf "1.    Check mtd monitored list for Bad Blocks and ECC now\\n\\n"
+	printf "2.    Run and display a detailed check of one or more mtd devices\\n\\n"
+	printf "3.    Run a read check and scan for errors now (takes a while)\\n\\n"
+	printf "i.    Show information on one or more mtd devices\\n\\n"
 	printf "l.    View/Set list of mtd devies to monitor/check\\n\\n"
 	printf "r.    Show a report of the most recent check\\n\\n"
 	printf "re.   Show a list of errors detected \\n\\n"
@@ -1793,15 +1859,19 @@ MainMenu(){
 				PressEnter
 				break
 			;;
-			a)
-				InfoAllMtds
-				PressEnter
-				break
-			;;
 			2)
 				printf "\\n"
 				if Check_Lock menu; then
-					CheckMTDdevice
+					CheckMTDdevice detail
+					Clear_Lock
+				fi
+				PressEnter
+				break
+			;;
+			i)
+				printf "\\n"
+				if Check_Lock menu; then
+					CheckMTDdevice info
 					Clear_Lock
 				fi
 				PressEnter
@@ -2029,7 +2099,7 @@ Menu_Install(){
 	Auto_Startup create 2>/dev/null
 	Shortcut_Script create
 	Print_Output false "Setting recommended mtd devices and doing initial scan..."
-	SetMTDs all
+	SetMTDs recommended
 	CreateMTDLog
 	Print_Output false "Done. Initial scan (baseline)"
 	ScanBadBlocks noread
