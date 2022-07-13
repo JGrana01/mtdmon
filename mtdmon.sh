@@ -28,7 +28,7 @@
 
 ### Start of script variables ###
 readonly SCRIPT_NAME="mtdmon"
-readonly SCRIPT_VERSION="v0.8.8"
+readonly SCRIPT_VERSION="v0.8.9"
 SCRIPT_BRANCH="main"
 MTDAPP_BRANCH="main"
 SCRIPT_REPO="https://raw.githubusercontent.com/JGrana01/mtdmon/$SCRIPT_BRANCH"
@@ -1757,6 +1757,8 @@ PrintErrors(){
 		printf "\\n${BOLD}${ERR}Detected Errors - "
 		previouserrors="$(cat $MTDERRORS)"
 		printf "$previouserrors"
+	else
+		printf "\\n${PASS}    No previous errors detected"
 	fi
 	printf "${CLEARFORMAT}\\n"
 }
@@ -2305,6 +2307,10 @@ case "$1" in
 	;;
 	startup)
 		Menu_Startup "$2"
+		exit 0
+	;;
+	report)
+		PrintLastResults
 		exit 0
 	;;
 	generate)
